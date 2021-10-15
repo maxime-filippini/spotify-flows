@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+spotipy = "*"
+apache-airflow = "==1.10.3"
+flask = "==1.0.3"
+python-dotenv = "*"
+
+[dev-packages]
+pytest = "*"
+hypothesis = "*"
+pre-commit = "*"
+black = "*"
+
+[requires]
+python_version = "3.8"
+
+[pipenv]
+allow_prereleases = true
