@@ -8,6 +8,7 @@ spotipy = "*"
 apache-airflow = "==1.10.3"
 flask = "==1.0.3"
 python-dotenv = "*"
+pyyaml = "*"
 
 [dev-packages]
 pytest = "*"
