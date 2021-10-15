@@ -1,11 +1,11 @@
-import spotipy
-from dotenv import load_dotenv
+from spotify.read import top_tracks, playlist_names
 
 
 def main():
-    load_dotenv()
-
-    pass
+    res = top_tracks()
+    # for r in res:
+    #     print(r["name"])
+    print(res)
 
 
 if __name__ == "__main__":
