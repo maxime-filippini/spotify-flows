@@ -1,55 +1,52 @@
+# Standard library imports
 import os
-from dotenv import load_dotenv
-from contextlib import contextmanager
 from functools import wraps
+from typing import Callable
+from typing import Any
 
-import spotipy
+# Third party imports
 from spotipy.oauth2 import SpotifyOAuth
+from dotenv import load_dotenv
 
+# Local imports
 from spotify.classes import ExtendedSpotify
 
-
-@contextmanager
+# Main body
 def login(scope: str) -> ExtendedSpotify:
-    try:
-        load_dotenv()
+    load_dotenv()
 
-        sp_oauth = SpotifyOAuth(
-            client_id=os.environ.get("SPOTIFY_CLIENT_ID"),
-            client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET"),
-            redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI"),
-            scope=scope,
+    sp_oauth = SpotifyOAuth(
+        client_id=os.environ.get("SPOTIFY_CLIENT_ID"),
+        client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET"),
+        redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI"),
+        scope=scope,
+    )
+
+    access_token = ""
+    token_info = sp_oauth.get_cached_token()
+
+    if token_info:
+        access_token = token_info["access_token"]
+    else:
+        auth_url = sp_oauth.get_authorize_url()
+        print(auth_url)
+        response = input(
+            "Paste the above link into your browser, then paste the redirect url here: "
         )
+        code = sp_oauth.parse_response_code(response)
+        token_info = sp_oauth.get_access_token(code)
+        access_token = token_info["access_token"]
 
-        access_token = ""
-        token_info = sp_oauth.get_cached_token()
-
-        if token_info:
-            access_token = token_info["access_token"]
-        else:
-            auth_url = sp_oauth.get_authorize_url()
-            print(auth_url)
-            response = input(
-                "Paste the above link into your browser, then paste the redirect url here: "
-            )
-
-            code = sp_oauth.parse_response_code(response)
-            token_info = sp_oauth.get_access_token(code)
-
-            access_token = token_info["access_token"]
-
-        yield ExtendedSpotify(auth=access_token)
-
-    finally:
-        pass
+    return ExtendedSpotify(auth=access_token)
 
 
-def autologin(scope: str):
+def login_if_missing(scope: str) -> Callable[[Callable[[ExtendedSpotify], Any]], Any]:
     def decorator(func):
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            with login(scope=scope) as sp:
-                rv = func(sp, *args, **kwargs)
+        def wrapper(sp=None, **kwargs):
+            if sp is None:
+                sp = login(scope=scope)
+            rv = func(sp, **kwargs)
             return rv
 
         return wrapper

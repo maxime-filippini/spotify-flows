@@ -10,7 +10,6 @@ class ExtendedSpotify(Spotify):
         )
 
     def playlist_remove_episodes(self, playlist_id, items):
-
         plid = self._get_id("playlist", playlist_id)
         ftracks = [self._get_uri("episode", tid) for tid in items]
         payload = {"tracks": [{"uri": track} for track in ftracks]}

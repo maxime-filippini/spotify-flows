@@ -1,27 +1,26 @@
-from spotify.login import autologin, login
-from spotify.read import top_tracks, playlist_names, read_show
-from processes.common import store_newest_episodes_in_playlist
-
-
-def search_podcasts():
-    with login(scope=None) as sp:
-        res = (
-            sp.search(q="finance+news", type="show", limit=50).get("shows").get("items")
-        )
-
-        res = [
-            {"name": r["name"], "n_ep": r["total_episodes"], "id": r["id"]} for r in res
-        ]
-
-        sorted_res = sorted(res, key=lambda x: x["n_ep"], reverse=True)
-        for r in sorted_res:
-            print(r)
+from processes.processor import Playlist, Artist, Album
+from spotify.playlists import get_playlist_tracks, make_new_playlist
 
 
 def main():
-    store_newest_episodes_in_playlist(
-        "Today's podcasts", "data/podcast.yml", date="2021-10-14"
+
+    S = (Artist.from_name("voyage") / Artist.from_name("breskvica")) + (
+        Artist.from_name("RAF Camora") / Artist.from_name("senidah")
     )
+
+    print((Artist.from_name("RAF Camora")).items)
+
+    # spb = (
+    #     SpotifyProcessBuilder()
+    #     + Artist.from_name("voyage")
+    #     + Artist.from_name("breskvica")
+    #     + Artist.from_name("jala brat")
+    #     + Artist.from_name("senidah")
+    # ).shuffle()
+
+    # make_new_playlist(sp=None, playlist_name="Balkan_2", tracks=spb.items)
+
+    return 0
 
 
 if __name__ == "__main__":
