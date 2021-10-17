@@ -16,6 +16,7 @@ from spotify.albums import get_album_id, get_album_songs, get_album_info
 from spotify.tracks import get_audio_features
 from spotify.user import get_recommendations_for_genre
 from spotify.data_structures import TrackItem
+from database.database import build_collection_from_id
 
 # TODO:
 # FILTERS
@@ -27,6 +28,11 @@ class TrackCollection:
     _items: List[Any] = field(default_factory=list)
     _audio_features_enriched: bool = False
 
+    # Class attributes
+    read_items_from_db = lambda id_, db_path: build_collection_from_id(
+        id_=id_, db_path=db_path
+    )
+
     @property
     def items(self):
         return self._items
@@ -34,6 +40,11 @@ class TrackCollection:
     @classmethod
     def from_id(cls, playlist_id: str):
         return cls(id_=playlist_id)
+
+    @classmethod
+    def from_db(cls, id_: str, db_path: str):
+        items = cls.read_items_from_db(id_=id_, db_path=db_path)
+        return TrackCollection(id_=id_, _items=items)
 
     @classmethod
     def from_name(cls, name: str):
@@ -134,6 +145,13 @@ class TrackCollection:
             )
             for item in items
         ]
+
+    def set_id(self, id_):
+        return TrackCollection(
+            id_=id_,
+            _items=self.items,
+            _audio_features_enriched=self._audio_features_enriched,
+        )
 
 
 @dataclass

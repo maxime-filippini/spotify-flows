@@ -5,10 +5,10 @@ name = "pypi"
 
 [packages]
 spotipy = "*"
-apache-airflow = "==1.10.3"
 flask = "==1.0.3"
 python-dotenv = "*"
 pyyaml = "*"
+sqlalchemy = "==1.4.25"
 
 [dev-packages]
 pytest = "*"
