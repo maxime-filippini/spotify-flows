@@ -30,3 +30,9 @@ def get_artist_albums(
 ):
     albums = sp.artist_albums(artist_id=artist_id, album_type=album_type).get("items")
     return [AlbumItem.from_dict(album) for album in albums]
+
+
+@login_if_missing(scope=None)
+def get_related_artists(sp: ExtendedSpotify, *, artist_id: str):
+    artists_dict = sp.artist_related_artists(artist_id=artist_id).get("artists")
+    return [ArtistItem.from_dict(artist) for artist in artists_dict]

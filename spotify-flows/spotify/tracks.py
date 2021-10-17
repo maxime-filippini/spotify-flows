@@ -2,6 +2,7 @@
 from typing import Dict
 from typing import Any
 from typing import List
+import copy
 
 # Third party imports
 
@@ -27,7 +28,23 @@ def get_track_id(sp: ExtendedSpotify, *, track_name: str) -> str:
 
 @login_if_missing(scope=None)
 def get_audio_features(sp: ExtendedSpotify, *, track_ids: List[str]):
-    all_audio_features = sp.audio_features(tracks=track_ids)
+    max_len = 20
+    offset = 0
+
+    all_audio_features = []
+
+    tracks_to_treat = copy.copy(track_ids)
+
+    while tracks_to_treat:
+        n = min(max_len, len(tracks_to_treat))
+
+        all_audio_features = all_audio_features + sp.audio_features(
+            tracks=tracks_to_treat[:n]
+        )
+
+        offset += n
+        tracks_to_treat = tracks_to_treat[n:]
+
     return {
         track_id: AudioFeaturesItem.from_dict(all_audio_features[i_track])
         for i_track, track_id in enumerate(track_ids)

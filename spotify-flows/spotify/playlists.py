@@ -2,6 +2,7 @@
 from typing import List
 
 # Third party imports
+import copy
 
 # Local imports
 from spotify.login import login_if_missing
@@ -10,20 +11,37 @@ from spotify.data_structures import TrackItem
 from spotify.tracks import read_track_from_id
 
 # Main body
-@login_if_missing(scope="playlist-read-private")
+@login_if_missing(scope="playlist-read-private playlist-modify-private")
 def get_playlist_id(sp: ExtendedSpotify, *, playlist_name: str) -> str:
+
     playlists = {
         playlist["name"]: playlist["id"]
         for playlist in sp.current_user_playlists(limit=50).get("items")
     }
+
     return playlists[playlist_name]
 
 
 @login_if_missing(scope="playlist-modify-private playlist-modify-public")
 def make_new_playlist(sp: ExtendedSpotify, *, playlist_name: str, tracks: List[str]):
-    sp.user_playlist_create(user=sp.me()["id"], name=playlist_name)
-    playlist_id = get_playlist_id(sp, playlist_name=playlist_name)
-    sp.playlist_add_items(playlist_id=playlist_id, items=tracks, position=0)
+    try:
+        playlist_id = get_playlist_id(sp, playlist_name=playlist_name)
+    except KeyError as e:
+        sp.user_playlist_create(user=sp.me()["id"], name=playlist_name)
+        playlist_id = get_playlist_id(sp=sp, playlist_name=playlist_name)
+
+    wipe_playlist(sp=sp, playlist_id=playlist_id, types=["track"])
+
+    offset = 0
+    remaining_tracks = copy.copy(tracks)
+
+    while remaining_tracks:
+        n = min(len(remaining_tracks), 20)
+        sp.playlist_add_items(
+            playlist_id=playlist_id, items=remaining_tracks[:n], position=offset
+        )
+        remaining_tracks = remaining_tracks[n:]
+        offset += n
 
 
 @login_if_missing(scope="playlist-read-private")
@@ -87,3 +105,7 @@ def edit_playlist_details(
         new_details["description"] = desc
 
     sp.playlist_change_details(playlist_id, **new_details)
+
+
+def build_playlist_from_collection():
+    pass
