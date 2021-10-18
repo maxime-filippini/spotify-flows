@@ -1,10 +1,18 @@
+"""
+    This module is the main API used to create track collections
+"""
+
+# Standard library imports
 from typing import List
 from typing import Any
 from dataclasses import dataclass, field, asdict
-
 import random
 import copy
 
+# Third party imports
+import pandas as pd
+
+# Local imports
 from spotify.playlists import get_playlist_id, get_playlist_tracks
 from spotify.artists import (
     get_artist_id,
@@ -14,14 +22,10 @@ from spotify.artists import (
 )
 from spotify.albums import get_album_id, get_album_songs, get_album_info
 from spotify.tracks import get_audio_features
-from spotify.user import get_recommendations_for_genre
-from spotify.data_structures import TrackItem
+from spotify.user import get_recommendations_for_genre, get_all_saved_tracks
 from database.database import build_collection_from_id
 
-# TODO:
-# FILTERS
-
-
+# Main body
 @dataclass
 class TrackCollection:
     id_: str = ""
@@ -89,6 +93,48 @@ class TrackCollection:
         enriched = (self._audio_features_enriched) and (other._audio_features_enriched)
         return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
 
+    def to_dataframes(self):
+        # Enrich with audio features
+        self._items = self._enrich_with_audio_features(self.items)
+        tracks = copy.copy(self.items)
+
+        # Extract data
+        album_artist = [
+            {"album_id": track.album.id, "artist_id": artist.id}
+            for track in tracks
+            for artist in track.album.artists
+        ]
+
+        all_tracks = [asdict(track) for track in tracks]
+
+        all_audio_features = [
+            {"track_id": track["id"], **track["audio_features"]} for track in all_tracks
+        ]
+
+        all_albums = [asdict(track.album) for track in tracks]
+        all_artists = [artist for album in all_albums for artist in album["artists"]]
+
+        # Build dataframes
+        df_all_artists = pd.DataFrame(all_artists)
+        df_all_albums = pd.DataFrame(all_albums).drop(columns="artists")
+        df_audio_features = pd.DataFrame(all_audio_features)
+
+        df_all_tracks = pd.DataFrame(all_tracks)
+        df_all_tracks.loc[:, "album_id"] = df_all_tracks["album"].apply(
+            lambda x: x["id"]
+        )
+
+        df_all_tracks.drop(columns=["album", "audio_features"], inplace=True)
+        df_album_artist = pd.DataFrame(album_artist)
+
+        return (
+            df_all_tracks,
+            df_all_artists,
+            df_all_albums,
+            df_audio_features,
+            df_album_artist,
+        )
+
     def shuffle(self):
         new_items = copy.copy(self.items)
         random.shuffle(new_items)
@@ -139,12 +185,10 @@ class TrackCollection:
             track_ids=[track.id for track in items]
         )
 
-        return [
-            TrackItem(
-                **{**asdict(item), **{"audio_features": audio_features_dict[item.id]}}
-            )
-            for item in items
-        ]
+        for item in items:
+            item.audio_features = audio_features_dict[item.id]
+
+        return items
 
     def set_id(self, id_):
         return TrackCollection(
@@ -152,6 +196,22 @@ class TrackCollection:
             _items=self.items,
             _audio_features_enriched=self._audio_features_enriched,
         )
+
+    def remove_duplicates(self):
+        # By ID
+        items = copy.copy(self.items)
+
+        idx = 0
+        while idx < len(items):
+            names = [item.name for item in items]
+
+            if items[idx].name in names[:idx]:
+                items.pop(idx)
+            else:
+                idx += 1
+
+        self._items = items
+        return self
 
 
 @dataclass
@@ -193,24 +253,25 @@ class Artist(TrackCollection):
 
     def all_songs(self):
         album_data = get_artist_albums(artist_id=self.id_)
-        album_collection = [Album.from_id(album.id) for album in album_data]
-        all_tracks = [track for album in album_collection for track in album.items]
+        album_collection = AlbumCollection(
+            albums=[Album.from_id(album.id) for album in album_data]
+        )
 
-        # Remove duplicates
-        idx = 0
-        while idx < len(all_tracks):
-            names = [track.name for track in all_tracks]
+        if album_collection:
+            track_collection = album_collection.remove_duplicates().items
+        else:
+            track_collection = []
 
-            if all_tracks[idx].name in names[:idx]:
-                all_tracks.pop(idx)
-            else:
-                idx += 1
+        return track_collection
 
-        return all_tracks
+    def related_artists(self, n: int, include: bool = True):
+        related_artists = get_related_artists(sp=None, artist_id=self.id_)
 
-    def related_artists(self, n: int):
-        artists = get_related_artists(sp=None, artist_id=self.id_)
-        return ArtistCollection(artists=artists[:n])
+        if include:
+            related_artists.append(self)
+            n += 1
+
+        return ArtistCollection(artists=related_artists[:n])
 
 
 @dataclass
@@ -225,10 +286,31 @@ class ArtistCollection(TrackCollection):
         if self._items:
             return self._items
         else:
-            return sum(self.artists).items
+            if self.artists:
+                return sum(self.artists).items
+            else:
+                return []
 
     def popular(self):
         return sum([artist.popular() for artist in self.artists])
+
+
+@dataclass
+class AlbumCollection(TrackCollection):
+    albums: List[Artist] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.albums = [Album(id_=album.id_) for album in self.albums]
+
+    @property
+    def items(self):
+        if self._items:
+            return self._items
+        else:
+            if self.albums:
+                return sum(self.albums).items
+            else:
+                return []
 
 
 class Genre(TrackCollection):
@@ -242,3 +324,15 @@ class Genre(TrackCollection):
             return self._items
         else:
             return get_recommendations_for_genre(sp=None, genre_names=[self.genre_name])
+
+
+class SavedTracks(TrackCollection):
+    def __init__(self):
+        self._items = []
+
+    @property
+    def items(self):
+        if self._items:
+            return self._items
+        else:
+            return get_all_saved_tracks(sp=None)

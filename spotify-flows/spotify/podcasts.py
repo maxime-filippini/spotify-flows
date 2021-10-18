@@ -1,3 +1,7 @@
+"""
+    This module holds the API functions related to podcast information
+"""
+
 # Standard library imports
 from typing import Dict
 from typing import Any

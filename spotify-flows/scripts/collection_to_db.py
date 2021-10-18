@@ -13,8 +13,9 @@ from pathlib import Path
 #     .set_id("Dua Lipa + MGK")
 # )
 
-collection = TrackCollection.from_db(
-    id_="Dua Lipa + MGK", db_path=Path("data/spotify.db")
+collection = (
+    TrackCollection.from_db(id_="Dua Lipa + MGK", db_path=Path("data/spotify.db"))
+    + Artist.from_name("rihanna").popular()
 )
 
 print("")

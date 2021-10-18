@@ -1,3 +1,7 @@
+"""
+    This module holds the API functions related to playlist information
+"""
+
 # Standard library imports
 from typing import List
 

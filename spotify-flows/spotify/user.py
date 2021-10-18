@@ -1,3 +1,7 @@
+"""
+    This module holds the API functions related to track information
+"""
+
 # Standard library imports
 from typing import List
 from typing import Dict
@@ -20,27 +24,25 @@ def playlist_names(sp: ExtendedSpotify) -> Dict[str, Any]:
 
 
 @login_if_missing(scope="user-top-read")
-def user_top_tracks(
+def get_user_top_tracks(
     sp: ExtendedSpotify,
     *,
     ranges: List[str] = ["short_term", "medium_term", "long_term"],
 ) -> Dict[str, List[Dict[str, Any]]]:
-    return {
-        range_: sp.current_user_top_tracks(time_range=range_, limit=50).get("items")
-        for range_ in ranges
-    }
+    out = {}
+    for range_ in ranges:
+        tracks_data = sp.current_user_top_tracks(time_range=range_, limit=50).get(
+            "items"
+        )
+        out[range_] = [TrackItem.from_dict(track) for track in tracks_data]
+
+    return out
 
 
 @login_if_missing(scope="user-read-playback-position")
 def read_show_from_id(sp: ExtendedSpotify, *, show_id: str) -> Dict[str, Any]:
     urn = f"spotify:shows:{show_id}"
     return sp.show(urn)
-
-
-@login_if_missing(scope="user-read-playback-position")
-def read_track_from_id(sp: ExtendedSpotify, *, track_id: str) -> Dict[str, Any]:
-    urn = f"spotify:tracks:{track_id}"
-    return sp.track(urn)
 
 
 @login_if_missing(scope="user-read-playback-position")

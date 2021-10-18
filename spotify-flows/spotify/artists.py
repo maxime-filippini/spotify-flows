@@ -1,11 +1,15 @@
+"""
+    This module holds the API functions related to artist information
+"""
+
 # Standard library imports
-from typing import List
 
 # Third party imports
 
 # Local imports
 from spotify.data_structures import ArtistItem, TrackItem, AlbumItem
 from spotify.login import login_if_missing
+from spotify.tracks import read_track_from_id
 from spotify.classes import ExtendedSpotify
 
 # Main body
@@ -21,7 +25,8 @@ def get_artist_id(sp: ExtendedSpotify, *, artist_name: str) -> str:
 @login_if_missing(scope=None)
 def get_artist_popular_songs(sp: ExtendedSpotify, *, artist_id: str):
     tracks_data = sp.artist_top_tracks(artist_id=artist_id).get("tracks")
-    return [TrackItem.from_dict(track) for track in tracks_data]
+    track_ids = [track["id"] for track in tracks_data]
+    return [read_track_from_id(track_id=track_id) for track_id in track_ids]
 
 
 @login_if_missing(scope=None)

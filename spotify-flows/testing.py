@@ -1,17 +1,40 @@
-from requests.api import get
-from spotify.collections import Artist, Playlist, Album, Genre
-from spotify.playlists import make_new_playlist
+from spotify.collections import (
+    Artist,
+    Playlist,
+    Album,
+    Genre,
+    SavedTracks,
+    TrackCollection,
+)
+from spotify.login import login
+from pathlib import Path
+from database.database import store_tracks_in_database, create_spotify_database
 
 
-# collection = Genre("hip-hop")
+sp = login(scope=None)
 
-
-# make_new_playlist(
-#     playlist_name="Hip hop recommended", tracks=[item.id for item in collection.items]
+# c = (
+#     (
+#         Artist.from_id("5LivRVTfsZa2k6FV0017fi")
+#         + Artist.from_name("jala brat")
+#         + Artist.from_name("voyage")
+#         + Artist.from_name("senidah")
+#     )
+#     .filter("album.release_date.year > 2018")
+#     .filter("audio_features.danceability > 0.7")
+#     .random(20)
+#     .set_id("Danceable Balkan")
 # )
 
 
-from spotify.user import get_all_saved_tracks
+db_path = "data/spotify.db"
+c = TrackCollection.from_db("saved_tracks", db_path=db_path)
+# c = SavedTracks().set_id("saved_tracks")
 
 
-tracks = get_all_saved_tracks()
+# if not Path(db_path).is_dir():
+#     create_spotify_database(db_path=db_path)
+
+# store_tracks_in_database(collection=c, db_path=db_path)
+
+print("")

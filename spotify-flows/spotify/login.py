@@ -1,3 +1,7 @@
+"""
+    This module holds the login routines for the Spotify API
+"""
+
 # Standard library imports
 import os
 from functools import wraps
