@@ -58,13 +58,13 @@ def import_items_to_playlist(
         )
 
 
-@login_if_missing(scope="playlist-modify-private playlist-modify-public")
+@login_if_missing(scope="playlist-modify-private")
 def make_new_playlist(
     sp: ExtendedSpotify,
     *,
     playlist_name: str,
     items: List[Union[TrackItem, EpisodeItem]],
-) -> None:
+) -> str:
     """Make playlist and add items
 
     Args:
@@ -81,6 +81,7 @@ def make_new_playlist(
 
     wipe_playlist(sp=sp, playlist_id=playlist_id)
     import_items_to_playlist(sp=sp, items=items, playlist_id=playlist_id)
+    return playlist_id
 
 
 @login_if_missing(scope="playlist-read-private")
@@ -146,7 +147,7 @@ def wipe_playlist(sp: ExtendedSpotify, *, playlist_id: str) -> None:
         sp.playlist_remove_episodes(playlist_id, list(set(episode_ids)))
 
 
-@login_if_missing(scope="playlist-modify-private playlist-read-private")
+@login_if_missing(scope="playlist-modify-private playlist-modify-public")
 def edit_playlist_details(
     sp: ExtendedSpotify, *, playlist_id: str, name: str = None, desc: str = None
 ) -> None:
@@ -165,4 +166,5 @@ def edit_playlist_details(
     if desc:
         new_details["description"] = desc
 
-    sp.playlist_change_details(playlist_id, **new_details)
+    if new_details:
+        sp.playlist_change_details(playlist_id, **new_details)

@@ -16,19 +16,28 @@ from dataclasses import dataclass, field, asdict
 import pandas as pd
 
 # Local imports
-from .artists import (
-    get_artist_id,
-    get_artist_popular_songs,
-    get_artist_albums,
-    get_related_artists,
-)
+from .login import login
 from .data_structures import TrackItem
 from .tracks import get_audio_features
-from .albums import get_album_id, get_album_songs
-from .podcasts import get_show_episodes, get_show_id
-from .playlists import get_playlist_id, get_playlist_tracks
-from .user import get_recommendations_for_genre, get_all_saved_tracks
+
+from .albums import get_album_id
+from .albums import get_album_songs
+from .podcasts import get_show_id
+from .podcasts import get_show_episodes
+from .user import get_all_saved_tracks
+from .user import get_recommendations_for_genre
+from spotify_flows.database.database import store_tracks_in_database
 from spotify_flows.database.database import build_collection_from_id
+
+from .artists import get_artist_id
+from .artists import get_artist_albums
+from .artists import get_related_artists
+from .artists import get_artist_popular_songs
+
+from .playlists import get_playlist_id
+from .playlists import make_new_playlist
+from .playlists import get_playlist_tracks
+
 
 # Main body
 @dataclass
@@ -38,6 +47,10 @@ class TrackCollection:
 
     read_items_from_db = lambda id_, db_path: build_collection_from_id(
         id_=id_, db_path=db_path
+    )
+
+    sp = login(
+        scope="playlist-modify-private playlist-modify-public user-read-playback-position user-library-read"
     )
 
     id_: str = ""
@@ -203,7 +216,15 @@ class TrackCollection:
         Returns:
             TrackCollection: Object with new items
         """
-        new_items = [item for item in self.items if "remix" not in item.name.lower()]
+        banned_words = ["remix", "mixed"]
+
+        new_items = [
+            item
+            for item in self.items
+            if all(
+                [(banned_word not in item.name.lower()) for banned_word in banned_words]
+            )
+        ]
         self._items = new_items
         return self
 
@@ -319,12 +340,23 @@ class TrackCollection:
         self._items = items[:k]
         return self
 
+    def to_playlist(self, playlist_name: str) -> None:
+        if playlist_name is None:
+            playlist_name = self.id_
+
+        make_new_playlist(sp=self.sp, playlist_name=playlist_name, items=self.items)
+
+    def to_database(self, db_path: str) -> None:
+        store_tracks_in_database(collection=self, db_path=db_path)
+
 
 @dataclass
 class Playlist(TrackCollection):
     """Class representing a Playlist's track contents"""
 
-    func_get_id = lambda name: get_playlist_id(sp=None, playlist_name=name)
+    @classmethod
+    def func_get_id(cls, name):
+        return get_playlist_id(sp=cls.sp, playlist_name=name)
 
     @property
     def items(self):
@@ -332,7 +364,7 @@ class Playlist(TrackCollection):
             return self._items
         else:
             if self.id_:
-                return get_playlist_tracks(sp=None, playlist_id=self.id_)
+                return get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
             else:
                 return []
 
@@ -340,7 +372,9 @@ class Playlist(TrackCollection):
 class Album(TrackCollection):
     """Class representing an Album's track contents"""
 
-    func_get_id = lambda name: get_album_id(sp=None, album_name=name)
+    @classmethod
+    def func_get_id(cls, name):
+        return get_album_id(sp=cls.sp, album_name=name)
 
     @property
     def items(self):
@@ -348,7 +382,7 @@ class Album(TrackCollection):
             return self._items
         else:
             if self.id_:
-                return get_album_songs(sp=None, album_id=self.id_)
+                return get_album_songs(sp=self.sp, album_id=self.id_)
             else:
                 return []
 
@@ -356,7 +390,9 @@ class Album(TrackCollection):
 class Artist(TrackCollection):
     """Class representing an Artist's track contents"""
 
-    func_get_id = lambda name: get_artist_id(sp=None, artist_name=name)
+    @classmethod
+    def func_get_id(cls, name):
+        return get_artist_id(sp=cls.sp, artist_name=name)
 
     @property
     def items(self):
@@ -374,7 +410,7 @@ class Artist(TrackCollection):
         Returns:
             Artist: Artist with items set to the popular songs only
         """
-        items = get_artist_popular_songs(sp=None, artist_id=self.id_)
+        items = get_artist_popular_songs(sp=self.sp, artist_id=self.id_)
         return Artist(id_=self.id_, _items=items)
 
     def all_songs(self) -> "Artist":
@@ -387,7 +423,7 @@ class Artist(TrackCollection):
         # Build album collections
         album_data = get_artist_albums(artist_id=self.id_)
         album_items = [Album.from_id(album.id) for album in album_data]
-        album_collection_items = [Album(id_=album.id_) for album in self.albums]
+        album_collection_items = [Album(id_=album.id_) for album in album_items]
         album_collection = AlbumCollection(albums=album_collection_items)
 
         # Retrieve items from album collection
@@ -408,7 +444,7 @@ class Artist(TrackCollection):
         Returns:
             ArtistCollection: Collection of related artists
         """
-        related_artist_items = get_related_artists(sp=None, artist_id=self.id_)
+        related_artist_items = get_related_artists(sp=self.sp, artist_id=self.id_)
 
         if include:
             related_artist_items.append(self)
@@ -479,7 +515,7 @@ class Genre(TrackCollection):
         else:
             if self.id_:
                 return get_recommendations_for_genre(
-                    sp=None, genre_names=[self.genre_name]
+                    sp=self.sp, genre_names=[self.genre_name]
                 )
             else:
                 return []
@@ -496,13 +532,15 @@ class SavedTracks(TrackCollection):
         if self._items:
             return self._items
         else:
-            return get_all_saved_tracks(sp=None)
+            return get_all_saved_tracks(sp=self.sp)
 
 
 class Show(TrackCollection):
     """Class representing an show's episode contents"""
 
-    func_get_id = lambda name: get_show_id(sp=None, query=name)
+    @classmethod
+    def func_get_id(cls, name):
+        return get_show_id(sp=cls.sp, query=name)
 
     @property
     def items(self) -> List[TrackItem]:
@@ -510,6 +548,6 @@ class Show(TrackCollection):
             return self._items
         else:
             if self.id_:
-                return get_show_episodes(sp=None, show_id=self.id_)
+                return get_show_episodes(sp=self.sp, show_id=self.id_)
             else:
                 return []
