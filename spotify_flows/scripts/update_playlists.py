@@ -2,8 +2,8 @@ import sqlite3
 
 import pandas as pd
 
-from spotify.collections import TrackCollection
-from database.database import get_collection_ids, store_tracks_in_database
+from spotify_flows.spotify.collections import TrackCollection
+from spotify_flows.database.database import get_collection_ids, store_tracks_in_database
 
 
 def main():

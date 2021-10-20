@@ -1,6 +1,9 @@
-from database.database import create_spotify_database, store_tracks_in_database
-from spotify.user import get_all_saved_tracks
-from spotify.collections import TrackCollection, Playlist, Artist
+from spotify_flows.database.database import (
+    create_spotify_database,
+    store_tracks_in_database,
+)
+from spotify_flows.spotify.user import get_all_saved_tracks
+from spotify_flows.spotify.collections import TrackCollection, Playlist, Artist
 
 from pathlib import Path
 

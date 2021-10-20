@@ -3,37 +3,65 @@
 """
 
 # Standard library imports
-from typing import Dict
-from typing import Any
-from typing import List
 import copy
+from typing import Any
+from typing import Dict
+from typing import List
 
 # Third party imports
 
 # Local imports
-from spotify.classes import ExtendedSpotify
-from spotify.data_structures import TrackItem
-from spotify.data_structures import AudioFeaturesItem
-from spotify.data_structures import AlbumItem
-from spotify.data_structures import ArtistItem
-from spotify.login import login_if_missing
+from .login import login_if_missing
+from .classes import ExtendedSpotify
+from .data_structures import TrackItem
+from .data_structures import AudioFeaturesItem
 
 # Main body
 @login_if_missing(scope=None)
-def read_track_from_id(sp: ExtendedSpotify, *, track_id: str) -> Dict[str, Any]:
+def read_track_from_id(sp: ExtendedSpotify, *, track_id: str) -> TrackItem:
+    """Build a track item from a given ID
+
+    Args:
+        sp (ExtendedSpotify): Spotify object
+        track_id (str): Track ID
+
+    Returns:
+        TrackItem: Track object
+    """
     track_dict = sp.track(track_id)
     return TrackItem.from_dict(track_dict)
 
 
 @login_if_missing(scope=None)
 def get_track_id(sp: ExtendedSpotify, *, track_name: str) -> str:
+    """Get ID of track that best matches track name
+
+    Args:
+        sp (ExtendedSpotify): Spotify object
+        track_name (str): Track name
+
+    Returns:
+        str: Best matching ID
+    """
     results = sp.search(track_name, type="track", limit=10).get("tracks").get("items")
     sorted_results = sorted(results, key=lambda x: x["popularity"], reverse=True)
     return sorted_results[0]["id"]
 
 
 @login_if_missing(scope=None)
-def get_audio_features(sp: ExtendedSpotify, *, track_ids: List[str]):
+def get_audio_features(
+    sp: ExtendedSpotify, *, track_ids: List[str]
+) -> Dict[str, AudioFeaturesItem]:
+    """Retrieve audio features for a list of track IDs
+
+    Args:
+        sp (ExtendedSpotify): Spotify object
+        track_ids (List[str]): Track IDs
+
+    Returns:
+        Dict[str, AudioFeaturesItem]: All audio features data
+    """
+
     max_len = 20
     offset = 0
     all_audio_features = []

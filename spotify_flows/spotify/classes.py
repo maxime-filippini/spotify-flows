@@ -11,9 +11,9 @@ from spotipy import Spotify
 
 # Main body
 class ExtendedSpotify(Spotify):
-    def playlist_add_episodes(self, playlist_id, items, position=None):
+    def playlist_add_items(self, playlist_id, items, item_type="track", position=None):
         plid = self._get_id("playlist", playlist_id)
-        ftracks = [self._get_uri("episode", tid) for tid in items]
+        ftracks = [self._get_uri(item_type, tid) for tid in items]
         return self._post(
             "playlists/%s/tracks" % (plid), payload=ftracks, position=position
         )

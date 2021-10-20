@@ -4,20 +4,29 @@
 
 # Standard library imports
 import os
-from functools import wraps
-from typing import Callable
 from typing import Any
+from typing import Callable
+from functools import wraps
 
 # Third party imports
-from spotipy.oauth2 import SpotifyOAuth
 from dotenv import load_dotenv
+from spotipy.oauth2 import SpotifyOAuth
 
 # Local imports
-from spotify.classes import ExtendedSpotify
+from .classes import ExtendedSpotify
 
 # Main body
 def login(scope: str) -> ExtendedSpotify:
-    load_dotenv()
+    """Log in to the Spotify API
+
+    Args:
+        scope (str): Scope for the connection
+
+    Returns:
+        ExtendedSpotify: Spotify object
+    """
+
+    load_dotenv()  # Load environment variables
 
     sp_oauth = SpotifyOAuth(
         client_id=os.environ.get("SPOTIFY_CLIENT_ID"),

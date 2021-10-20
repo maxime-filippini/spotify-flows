@@ -9,6 +9,8 @@ flask = "==1.0.3"
 python-dotenv = "*"
 pyyaml = "*"
 sqlalchemy = "==1.4.25"
+fastapi = "*"
+uvicorn = "*"
 
 [dev-packages]
 pytest = "*"

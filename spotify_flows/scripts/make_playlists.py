@@ -1,5 +1,5 @@
-from spotify.collections import Artist, Playlist, Album
-from spotify.playlists import make_new_playlist
+from spotify_flows.spotify.collections import Artist, Playlist, Album
+from spotify_flows.spotify.playlists import make_new_playlist
 
 
 # # Example 1 - Popular songs from related Artists
@@ -36,20 +36,16 @@ from spotify.playlists import make_new_playlist
 # )
 
 
-# collection = (
-#     Artist.from_name("Kwengface")
-#     .related_artists(n=10)
-#     .popular()
-#     .sort(by="audio_features.energy", ascending=False)
-# )
-
-
-# make_new_playlist(playlist_name="Drill", tracks=[item.id for item in collection.items])
-
-
-collection = Playlist.from_name("Drill") % Playlist.from_name("Andy C Energy!")
-
-
-make_new_playlist(
-    playlist_name="Drill & Dnb", tracks=[item.id for item in collection.items]
+collection = (
+    (
+        Artist.from_name("Wilkinson")
+        + Artist.from_name("Sub focus")
+        + Artist.from_name("Millbrook")
+        + Artist.from_name("Tsuki")
+        + Artist.from_name("Tujamo")
+    )
+    .filter("audio_features.energy > 0.7")
+    .sort(by="audio_features.energy", ascending=False)
 )
+
+make_new_playlist(playlist_name="Bang!", tracks=[item.id for item in collection.items])

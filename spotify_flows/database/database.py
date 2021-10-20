@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 import pandas as pd
 
 # Local imports
-from spotify.tracks import get_audio_features
-from spotify.data_structures import TrackItem
+from spotify_flows.spotify.tracks import get_audio_features
+from spotify_flows.spotify.data_structures import TrackItem
 
 # Schemas
 
