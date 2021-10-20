@@ -11,7 +11,7 @@ from spotify_flows.spotify.collections import Show
 from spotify_flows.spotify.playlists import make_new_playlist, edit_playlist_details
 
 # Main body
-def main():
+def todays_podcasts():
 
     # 1. Load data
     with open("spotify_flows/data/podcast.yml") as f:
@@ -42,4 +42,4 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(todays_podcasts())

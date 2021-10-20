@@ -3,8 +3,8 @@
 """
 
 # Standard library imports
+import random
 import sqlite3
-from dataclasses import asdict
 from typing import List
 from datetime import datetime, timezone
 
@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 import pandas as pd
 
 # Local imports
-from spotify_flows.spotify.tracks import get_audio_features
 from spotify_flows.spotify.data_structures import TrackItem
 
 # Schemas
@@ -35,7 +34,7 @@ CREATE TABLE IF NOT EXISTS audio_features (
 )"""
 
 CREATE_OPS_TABLE = "CREATE TABLE IF NOT EXISTS operations (id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE, op_type TEXT)"
-CREATE_TRACKS_TABLE = "CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, name TEXT, popularity INTEGER, album_id TEXT, op_index INTEGER)"
+CREATE_TRACKS_TABLE = "CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, name TEXT, popularity INTEGER, album_id TEXT, duration_ms INTEGER, op_index INTEGER)"
 CREATE_ARTISTS_TABLE = "CREATE TABLE IF NOT EXISTS artists (id TEXT PRIMARY KEY, name TEXT, popularity INTEGER, op_index INTEGER)"
 CREATE_ALBUMS_TABLE = "CREATE TABLE IF NOT EXISTS albums (id TEXT PRIMARY KEY, name TEXT, release_date DATE, op_index INTEGER)"
 CREATE_ALBUM_ARTIST_TABLE = "CREATE TABLE IF NOT EXISTS albums_artists (artist_id TEXT, album_id TEXT, op_index INTEGER)"
@@ -102,34 +101,18 @@ def create_spotify_database(db_path: str) -> None:
         record_operation(conn, "db_creation")
 
 
-def build_collection_from_id(id_: str, db_path: str) -> List[TrackItem]:
-    """Build a list of track items from a given collection ID
-
-    Args:
-        id_ (str): Collection identifier
-        db_path (str): Path to database
-
-    Raises:
-        ValueError: Collection does not exist or has no tracks
-
-    Returns:
-        List[TrackItem]: Output
-    """
+def build_collection_from_track_ids(
+    db_path: str, track_ids: List[str]
+) -> List[TrackItem]:
 
     with sqlite3.connect(db_path) as conn:
-        df_collections = pd.read_sql(f"SELECT * FROM collections", con=conn)
         df_tracks = pd.read_sql(f"SELECT * FROM tracks", con=conn)
         df_albums = pd.read_sql(f"SELECT * FROM albums", con=conn)
         df_albums_artists = pd.read_sql(f"SELECT * FROM albums_artists", con=conn)
         df_artists = pd.read_sql(f"SELECT * FROM artists", con=conn)
         df_audio_features = pd.read_sql(f"SELECT * FROM audio_features", con=conn)
 
-    # Early exit
-    if len(df_tracks) == 0:
-        raise ValueError("Collection not found in database or empty")
-
     # Format the data
-    track_ids = df_collections.loc[df_collections["id"] == id_, "track_id"].tolist()
     track_data = df_tracks.loc[df_tracks["id"].isin(track_ids)].to_dict("records")
 
     collection = []
@@ -161,6 +144,20 @@ def build_collection_from_id(id_: str, db_path: str) -> List[TrackItem]:
         collection.append(TrackItem.from_dict(track_dict))
 
     return collection
+
+
+def build_collection_from_collection_id(id_: str, db_path: str) -> List[TrackItem]:
+    with sqlite3.connect(db_path) as conn:
+        df_collections = pd.read_sql(f"SELECT * FROM collections", con=conn)
+    track_ids = df_collections.loc[df_collections["id"] == id_, "track_id"].tolist()
+    return build_collection_from_track_ids(db_path=db_path, track_ids=track_ids)
+
+
+def build_random_collection(db_path: str, N: int) -> List[TrackItem]:
+    with sqlite3.connect(db_path) as conn:
+        df_tracks = pd.read_sql(f"SELECT * FROM tracks", con=conn)
+    track_ids = random.sample(list(df_tracks.loc[:, "id"].values), k=N)
+    return build_collection_from_track_ids(db_path=db_path, track_ids=track_ids)
 
 
 def store_tracks_in_database(collection, db_path: str) -> None:

@@ -1,10 +1,8 @@
-from spotify_flows.examples.collections import combination_of_artists
-from spotify_flows.spotify.playlists import make_new_playlist
-from spotify_flows.spotify.user import playlist_names
+from spotify_flows.examples.collections import pomodoro_lofi
 
 
 def main():
-    combination_of_artists().to_playlist(playlist_name="Example Playlist")
+    pomodoro_lofi().to_playlist(playlist_name="Pomodoro LoFi")
     return 0
 
 

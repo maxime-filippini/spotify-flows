@@ -11,6 +11,9 @@ pyyaml = "*"
 sqlalchemy = "==1.4.25"
 fastapi = "*"
 uvicorn = "*"
+numpy = "*"
+pandas = "*"
+apscheduler = "*"
 
 [dev-packages]
 pytest = "*"

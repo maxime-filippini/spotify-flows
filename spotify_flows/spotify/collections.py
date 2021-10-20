@@ -8,18 +8,21 @@ import random
 import inspect
 from typing import Any
 from typing import List
+from typing import Union
 from typing import Tuple
 from typing import Callable
 from dataclasses import dataclass, field, asdict
 
 # Third party imports
 import pandas as pd
+import numpy as np
 
 # Local imports
 from .login import login
 from .data_structures import TrackItem
-from .tracks import get_audio_features
 
+from .tracks import get_track_id, read_track_from_id
+from .tracks import get_audio_features
 from .albums import get_album_id
 from .albums import get_album_songs
 from .podcasts import get_show_id
@@ -27,7 +30,7 @@ from .podcasts import get_show_episodes
 from .user import get_all_saved_tracks
 from .user import get_recommendations_for_genre
 from spotify_flows.database.database import store_tracks_in_database
-from spotify_flows.database.database import build_collection_from_id
+from spotify_flows.database.database import build_collection_from_collection_id
 
 from .artists import get_artist_id
 from .artists import get_artist_albums
@@ -45,7 +48,7 @@ class TrackCollection:
     """Class representing a collection of tracks. Can be chained together through a
     variety of defined methods."""
 
-    read_items_from_db = lambda id_, db_path: build_collection_from_id(
+    read_items_from_db = lambda id_, db_path: build_collection_from_collection_id(
         id_=id_, db_path=db_path
     )
 
@@ -62,8 +65,8 @@ class TrackCollection:
         return self._items
 
     @classmethod
-    def from_id(cls, playlist_id: str):
-        return cls(id_=playlist_id)
+    def from_id(cls, id_: str):
+        return cls(id_=id_)
 
     @classmethod
     def from_db(cls, id_: str, db_path: str):
@@ -84,7 +87,7 @@ class TrackCollection:
         Returns:
             TrackCollection: Collection object with combined items
         """
-        new_items = list(set(self.items + other.items))
+        new_items = self.items + other.items
         enriched = (self._audio_features_enriched) and (other._audio_features_enriched)
         return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
 
@@ -194,8 +197,9 @@ class TrackCollection:
         """
         new_items = copy.copy(self.items)
         random.shuffle(new_items)
-        self._items = new_items
-        return self
+        return TrackCollection(
+            _items=new_items, _audio_features_enriched=self._audio_features_enriched
+        )
 
     def random(self, N: int) -> "TrackCollection":
         """Sample items randomly
@@ -207,8 +211,10 @@ class TrackCollection:
             TrackCollection: Object with new items
         """
         new_items = random.sample(self.items, min([N, len(self.items)]))
-        self._items = new_items
-        return self
+
+        new_coll = copy.deepcopy(self)
+        new_coll._items = new_items
+        return new_coll
 
     def remove_remixes(self) -> "TrackCollection":
         """Remove remixes from items
@@ -225,8 +231,10 @@ class TrackCollection:
                 [(banned_word not in item.name.lower()) for banned_word in banned_words]
             )
         ]
-        self._items = new_items
-        return self
+
+        new_coll = copy.deepcopy(self)
+        new_coll._items = new_items
+        return new_coll
 
     def sort(self, by: str, ascending: bool = True) -> "TrackCollection":
         """Sort items
@@ -275,6 +283,21 @@ class TrackCollection:
             _items=filtered_items,
             _audio_features_enriched=self._audio_features_enriched,
         )
+
+    def trim_duration(self, minutes: Union[int, Tuple[int, int]]):
+        items = copy.copy(self.items)
+        cum_time = np.cumsum(np.array([item.duration_ms for item in items])) / 1000 / 60
+
+        if isinstance(minutes, int):
+            n_below = len(cum_time[cum_time <= minutes])
+            trim_points = (0, n_below)
+        else:
+            n_below_min = len(cum_time[cum_time <= minutes[0]])
+            n_below_max = len(cum_time[cum_time <= minutes[1]])
+            trim_points = (n_below_min + 1, n_below_max)
+
+        new_items = items[trim_points[0] : trim_points[1] + 1]
+        return TrackCollection(_items=new_items)
 
     def _enrich_with_audio_features(self, items: List[TrackItem]) -> List[TrackItem]:
         """Get items enriched with audio features
@@ -325,8 +348,9 @@ class TrackCollection:
             else:
                 idx += 1
 
-        self._items = items
-        return self
+        new_coll = copy.deepcopy(self)
+        new_coll._items = items
+        return new_coll
 
     def first(self, n: int) -> "TrackCollection":
         """First n items
@@ -337,13 +361,14 @@ class TrackCollection:
 
         items = self.items
         k = min((n, len(items)))
-        self._items = items[:k]
-        return self
+
+        new_coll = copy.deepcopy(self)
+        new_coll._items = items[:k]
+        return new_coll
 
     def to_playlist(self, playlist_name: str) -> None:
         if playlist_name is None:
             playlist_name = self.id_
-
         make_new_playlist(sp=self.sp, playlist_name=playlist_name, items=self.items)
 
     def to_database(self, db_path: str) -> None:
@@ -549,5 +574,23 @@ class Show(TrackCollection):
         else:
             if self.id_:
                 return get_show_episodes(sp=self.sp, show_id=self.id_)
+            else:
+                return []
+
+
+class Track(TrackCollection):
+    """Class representing a single-track collection"""
+
+    @classmethod
+    def func_get_id(cls, name):
+        return get_track_id(sp=cls.sp, track_name=name)
+
+    @property
+    def items(self) -> List[TrackItem]:
+        if self._items:
+            return self._items
+        else:
+            if self.id_:
+                return [read_track_from_id(track_id=self.id_)]
             else:
                 return []

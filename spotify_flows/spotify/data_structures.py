@@ -89,6 +89,7 @@ class TrackItem(SpotifyDataStructure):
     id: str = ""
     name: str = ""
     popularity: int = 0
+    duration_ms: int = 0
     audio_features: AudioFeaturesItem = field(
         default=AudioFeaturesItem(), repr=False, compare=False
     )
