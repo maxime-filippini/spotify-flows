@@ -53,7 +53,7 @@ table_schemas = [
 ]
 
 
-def op_index(conn: sqlite3.Connection) -> int:
+def _op_index(conn: sqlite3.Connection) -> int:
     """Get operation index to be used
 
     Args:
@@ -72,7 +72,7 @@ def op_index(conn: sqlite3.Connection) -> int:
     return max_id + 1
 
 
-def record_operation(conn: sqlite3.Connection, op_type: str) -> None:
+def _record_operation(conn: sqlite3.Connection, op_type: str) -> None:
     """Record an operation into the operations table of the database
 
     Args:
@@ -98,7 +98,7 @@ def create_spotify_database(db_path: str) -> None:
         c = conn.cursor()
         for table_schema in table_schemas:
             c.execute(table_schema)
-        record_operation(conn, "db_creation")
+        _record_operation(conn, "db_creation")
 
 
 def build_collection_from_track_ids(
@@ -205,11 +205,11 @@ def store_tracks_in_database(collection, db_path: str) -> None:
 
             # Add to database
             if len(df_to_add) > 0:
-                df_to_add.loc[:, "op_index"] = op_index(conn)
+                df_to_add.loc[:, "op_index"] = _op_index(conn)
                 df_to_add.to_sql(table, con=conn, if_exists="append", index=False)
-                record_operation(conn, op_type=f"record_addition_({table})")
+                _record_operation(conn, op_type=f"record_addition_({table})")
 
         df_collection = df_all_tracks.loc[:, ["id"]].rename(columns={"id": "track_id"})
         df_collection.loc[:, "id"] = collection.id_
         df_collection.to_sql("collections", con=conn, if_exists="append", index=False)
-        record_operation(conn, op_type="collection_addition")
+        _record_operation(conn, op_type="collection_addition")

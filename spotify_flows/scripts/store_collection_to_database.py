@@ -5,7 +5,7 @@ from spotify_flows.examples.collections import (
     saved_tracks,
     on_repeat,
 )
-from spotify_flows.database.database import create_spotify_database
+from spotify_flows.database import create_spotify_database
 
 
 def main():

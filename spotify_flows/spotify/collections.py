@@ -29,8 +29,8 @@ from .podcasts import get_show_id
 from .podcasts import get_show_episodes
 from .user import get_all_saved_tracks
 from .user import get_recommendations_for_genre
-from spotify_flows.database.database import store_tracks_in_database
-from spotify_flows.database.database import build_collection_from_collection_id
+from spotify_flows.database import store_tracks_in_database
+from spotify_flows.database import build_collection_from_collection_id
 
 from .artists import get_artist_id
 from .artists import get_artist_albums
