@@ -3,8 +3,6 @@ from datetime import datetime, timedelta
 
 # Third party imports
 import yaml
-import base64
-
 
 # Local imports
 from spotify_flows.spotify.collections import Show

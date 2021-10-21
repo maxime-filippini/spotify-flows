@@ -47,9 +47,7 @@ def import_items_to_playlist(
         playlist_id (str): Playlist ID
     """
 
-    all_items = copy.copy(items)
-
-    for i_item, item in enumerate(all_items):
+    for i_item, item in enumerate(items):
         sp.playlist_add_items(
             playlist_id=playlist_id,
             items=[item.id],
@@ -119,7 +117,8 @@ def get_playlist_tracks(sp: ExtendedSpotify, *, playlist_id: str) -> List[TrackI
         if len(loaded_track_ids) < limit:
             break
 
-    return [read_track_from_id(sp=sp, track_id=track_id) for track_id in all_track_ids]
+    for track_id in all_track_ids:
+        yield read_track_from_id(sp=sp, track_id=track_id)
 
 
 @login_if_missing(scope="playlist-modify-private")

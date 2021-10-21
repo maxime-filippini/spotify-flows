@@ -1,7 +1,5 @@
 from spotify_flows.spotify.collections import Artist
 from spotify_flows.spotify.collections import Playlist
-from spotify_flows.spotify.collections import Album
-from spotify_flows.spotify.collections import Show
 from spotify_flows.spotify.collections import Track
 from spotify_flows.spotify.collections import SavedTracks
 

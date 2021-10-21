@@ -69,7 +69,9 @@ def get_recommendations_for_genre(
         List[TrackItem]: Recommended tracks
     """
     tracks = sp.recommendations(seed_genres=genre_names).get("tracks")
-    return [TrackItem.from_dict(track) for track in tracks]
+
+    for track in tracks:
+        yield TrackItem.from_dict(track)
 
 
 @login_if_missing(scope="user-library-read")
@@ -83,26 +85,19 @@ def get_all_saved_tracks(sp: ExtendedSpotify) -> List[TrackItem]:
         List[TrackItem]: Saved tracks
     """
 
-    raw_results = sp.current_user_saved_tracks(limit=50)
-
-    def format_results(results: Dict[str, Any]):
-        return [
-            TrackItem.from_dict(
-                {
-                    **result.get("track"),
-                    "release_date": result["track"]["album"]["release_date"],
-                }
-            )
-            for result in results.get("items")
-        ]
-
-    all_results = format_results(raw_results)
-    next = raw_results.get("next")
+    all_results = sp.current_user_saved_tracks(limit=50)
+    next = all_results.get("next")
 
     while next:
         raw_results = sp.next(raw_results)
         next = raw_results.get("next")
-        new_results = format_results(raw_results)
+        new_results = raw_results
         all_results = all_results + new_results
 
-    return all_results
+    for result in all_results:
+        yield TrackItem.from_dict(
+            {
+                **result.get("track"),
+                "release_date": result["track"]["album"]["release_date"],
+            }
+        )
