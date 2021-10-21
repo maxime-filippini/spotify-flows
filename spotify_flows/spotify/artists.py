@@ -47,7 +47,9 @@ def get_artist_popular_songs(sp: ExtendedSpotify, *, artist_id: str) -> List[Tra
     """
     tracks_data = sp.artist_top_tracks(artist_id=artist_id).get("tracks")
     track_ids = [track["id"] for track in tracks_data]
-    return [read_track_from_id(track_id=track_id) for track_id in track_ids]
+
+    for track_id in track_ids:
+        yield read_track_from_id(track_id=track_id)
 
 
 @login_if_missing(scope=None)

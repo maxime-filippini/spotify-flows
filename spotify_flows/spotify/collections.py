@@ -6,6 +6,7 @@
 import copy
 import random
 import inspect
+import itertools
 from typing import Any
 from typing import List
 from typing import Union
@@ -62,7 +63,7 @@ class TrackCollection:
 
     @property
     def items(self):
-        return self._items
+        yield from self._items
 
     @classmethod
     def from_id(cls, id_: str):
@@ -87,9 +88,15 @@ class TrackCollection:
         Returns:
             TrackCollection: Collection object with combined items
         """
-        new_items = self.items + other.items
+
+        def new_items():
+            yield from self.items
+            yield from other.items
+
         enriched = (self._audio_features_enriched) and (other._audio_features_enriched)
-        return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
+        return TrackCollection(
+            id_="", _items=new_items(), _audio_features_enriched=enriched
+        )
 
     def __radd__(self, other: "TrackCollection") -> "TrackCollection":
         """Used when building track collections from list of other track collections
@@ -108,9 +115,17 @@ class TrackCollection:
         Returns:
             TrackCollection: Collection object with modified items.
         """
-        new_items = list(set(self.items) - set(other.items))
+        other_items = list(other.items)
+
+        def new_items():
+            for item in self.items:
+                if item not in other_items:
+                    yield item
+
         enriched = self._audio_features_enriched
-        return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
+        return TrackCollection(
+            id_="", _items=new_items(), _audio_features_enriched=enriched
+        )
 
     def __truediv__(self, other: "TrackCollection") -> "TrackCollection":
         """Defines the division of two collections.
@@ -118,9 +133,17 @@ class TrackCollection:
         Returns:
             TrackCollection: Items are intersection of self and other
         """
-        new_items = list(set(self.items).intersection(set(other.items)))
-        enriched = (self._audio_features_enriched) and (other._audio_features_enriched)
-        return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
+        other_items = list(other.items)
+
+        def new_items():
+            for item in self.items:
+                if item in other_items:
+                    yield item
+
+        enriched = self._audio_features_enriched
+        return TrackCollection(
+            id_="", _items=new_items(), _audio_features_enriched=enriched
+        )
 
     def __mod__(self, other: "TrackCollection") -> "TrackCollection":
         """Defines the modulo of two collections
@@ -128,18 +151,14 @@ class TrackCollection:
         Returns:
             TrackCollection: Items are alternates of self and other.
         """
-        current_items = self.items
-        other_items = other.items
-        current_items = [item for item in current_items if item not in other_items]
 
-        new_items = [
-            item
-            for item_1, item_2 in zip(current_items, other_items)
-            for item in (item_1, item_2)
-        ]
+        def new_items():
+            for i, j in zip(self.items, other.items):
+                yield i
+                yield j
 
         enriched = (self._audio_features_enriched) and (other._audio_features_enriched)
-        return TrackCollection(_items=new_items, _audio_features_enriched=enriched)
+        return TrackCollection(_items=new_items(), _audio_features_enriched=enriched)
 
     def to_dataframes(self) -> Tuple[pd.DataFrame]:
         """Transforms items into dataframes, used for storage in database.
@@ -195,8 +214,11 @@ class TrackCollection:
         Returns:
             TrackCollection: Object with items shuffled.
         """
-        new_items = copy.copy(self.items)
-        random.shuffle(new_items)
+        new_items_list = copy.copy(list(self.items))
+        random.shuffle(new_items_list)
+
+        new_items = (item for item in new_items_list)
+
         return TrackCollection(
             _items=new_items, _audio_features_enriched=self._audio_features_enriched
         )
@@ -210,11 +232,13 @@ class TrackCollection:
         Returns:
             TrackCollection: Object with new items
         """
-        new_items = random.sample(self.items, min([N, len(self.items)]))
 
-        new_coll = copy.deepcopy(self)
-        new_coll._items = new_items
-        return new_coll
+        def new_items():
+            yield from random.sample(list(self.items), k=N)
+
+        return TrackCollection(
+            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
+        )
 
     def remove_remixes(self) -> "TrackCollection":
         """Remove remixes from items
@@ -224,17 +248,19 @@ class TrackCollection:
         """
         banned_words = ["remix", "mixed"]
 
-        new_items = [
-            item
-            for item in self.items
-            if all(
-                [(banned_word not in item.name.lower()) for banned_word in banned_words]
-            )
-        ]
+        def new_items():
+            for item in self.items:
+                if all(
+                    [
+                        (banned_word not in item.name.lower())
+                        for banned_word in banned_words
+                    ]
+                ):
+                    yield item
 
-        new_coll = copy.deepcopy(self)
-        new_coll._items = new_items
-        return new_coll
+        return TrackCollection(
+            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
+        )
 
     def sort(self, by: str, ascending: bool = True) -> "TrackCollection":
         """Sort items
@@ -248,16 +274,25 @@ class TrackCollection:
         """
         str_attr = f"item.{by}"
 
-        # Enrichment with audio features if needed
-        if by.startswith("audio_features") and not self._audio_features_enriched:
-            self._items = self._enrich_with_audio_features(items=self.items)
-            self._audio_features_enriched = True
+        def new_items():
+            # Enrichment with audio features if needed
+            if by.startswith("audio_features") and not self._audio_features_enriched:
+                all_items = self._enrich_with_audio_features(items=self.items)
+                self._audio_features_enriched = True
 
-        sorted_items = sorted(
-            self.items, key=eval(f"lambda item: {str_attr}"), reverse=(not ascending)
-        )
+            else:
+                all_items = self.items
+
+            sorted_items = sorted(
+                list(all_items),
+                key=eval(f"lambda item: {str_attr}"),
+                reverse=(not ascending),
+            )
+
+            yield from sorted_items
+
         return TrackCollection(
-            _items=sorted_items, _audio_features_enriched=self._audio_features_enriched
+            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
         )
 
     def filter(self, criteria_func: Callable[..., Any]) -> "TrackCollection":
@@ -271,17 +306,24 @@ class TrackCollection:
         """
 
         # Enrichment with audio features if needed
-        if (
-            "audio_features" in inspect.getsource(criteria_func)
-            and not self._audio_features_enriched
-        ):
-            self._items = self._enrich_with_audio_features(items=self.items)
-            self._audio_features_enriched = True
+        def new_items():
 
-        filtered_items = [item for item in self.items if criteria_func(item)]
+            if (
+                "audio_features" in inspect.getsource(criteria_func)
+                and not self._audio_features_enriched
+            ):
+                self._audio_features_enriched = True
+                all_items = self._enrich_with_audio_features(items=self.items)
+
+            else:
+                all_items = self.items
+
+            for item in all_items:
+                if criteria_func(item):
+                    yield item
+
         return TrackCollection(
-            _items=filtered_items,
-            _audio_features_enriched=self._audio_features_enriched,
+            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
         )
 
     def trim_duration(self, minutes: Union[int, Tuple[int, int]]):
@@ -308,14 +350,9 @@ class TrackCollection:
         Returns:
             List[TrackItem]: Enriched items
         """
-        audio_features_dict = get_audio_features(
-            track_ids=[track.id for track in items]
-        )
-
         for item in items:
-            item.audio_features = audio_features_dict[item.id]
-
-        return items
+            item.audio_features = get_audio_features(track_ids=[item.id])[item.id]
+            yield item
 
     def set_id(self, id_: str) -> "TrackCollection":
         """Add ID to collection, e.g. to use for storage in a database
@@ -359,12 +396,11 @@ class TrackCollection:
             TrackCollection: Collection with trimmed items
         """
 
-        items = self.items
-        k = min((n, len(items)))
+        new_items = itertools.islice(self.items, n)
 
-        new_coll = copy.deepcopy(self)
-        new_coll._items = items[:k]
-        return new_coll
+        return TrackCollection(
+            _items=new_items, _audio_features_enriched=self._audio_features_enriched
+        )
 
     def to_playlist(self, playlist_name: str) -> None:
         if playlist_name is None:
@@ -386,12 +422,13 @@ class Playlist(TrackCollection):
     @property
     def items(self):
         if self._items:
-            return self._items
+            yield from self._items
         else:
             if self.id_:
-                return get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
+                yield from get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
+
             else:
-                return []
+                yield from iter(())
 
 
 class Album(TrackCollection):
@@ -404,12 +441,12 @@ class Album(TrackCollection):
     @property
     def items(self):
         if self._items:
-            return self._items
+            yield from self._items
         else:
             if self.id_:
-                return get_album_songs(sp=self.sp, album_id=self.id_)
+                yield from get_album_songs(sp=self.sp, album_id=self.id_)
             else:
-                return []
+                yield from iter(())
 
 
 class Artist(TrackCollection):
@@ -422,12 +459,12 @@ class Artist(TrackCollection):
     @property
     def items(self):
         if self._items:
-            return self._items
+            yield from self._items
         else:
             if self.id_:
-                return self.all_songs()
+                yield from self.all_songs()
             else:
-                return []
+                yield from iter(())
 
     def popular(self) -> "Artist":
         """Popular songs for the artist
@@ -435,8 +472,11 @@ class Artist(TrackCollection):
         Returns:
             Artist: Artist with items set to the popular songs only
         """
-        items = get_artist_popular_songs(sp=self.sp, artist_id=self.id_)
-        return Artist(id_=self.id_, _items=items)
+
+        def items():
+            yield from get_artist_popular_songs(sp=self.sp, artist_id=self.id_)
+
+        return Artist(id_=self.id_, _items=items())
 
     def all_songs(self) -> "Artist":
         """All songs by the artist
@@ -447,17 +487,12 @@ class Artist(TrackCollection):
 
         # Build album collections
         album_data = get_artist_albums(artist_id=self.id_)
-        album_items = [Album.from_id(album.id) for album in album_data]
-        album_collection_items = [Album(id_=album.id_) for album in album_items]
+        album_collection_items = [Album.from_id(album.id) for album in album_data]
         album_collection = AlbumCollection(albums=album_collection_items)
 
         # Retrieve items from album collection
         if album_collection:
-            track_collection = album_collection.remove_duplicates().items
-        else:
-            track_collection = []
-
-        return track_collection
+            yield from album_collection.items
 
     def related_artists(self, n: int, include: bool = True) -> "ArtistCollection":
         """Artists related to the artist
@@ -491,14 +526,14 @@ class ArtistCollection(TrackCollection):
     @property
     def items(self) -> List[TrackItem]:
         if self._items:
-            return self._items
+            items_to_load = self._items
         else:
             if self.artists:
-                # Items of an ArtistCollection is the combination of the items
-                # of all underlying artists
-                return sum(self.artists).items
+                items_to_load = sum(self.artists).items
             else:
-                return []
+                items_to_load = iter(())
+
+        yield from items_to_load
 
     def popular(self) -> TrackCollection:
         """Popular songs of a given artist collection
@@ -508,6 +543,12 @@ class ArtistCollection(TrackCollection):
         """
         return sum([artist.popular() for artist in self.artists])
 
+    def alternate(self):
+        def new_items():
+            return itertools.chain(*zip(*[c.items for c in self.artists]))
+
+        return TrackCollection(id_="", _items=new_items())
+
 
 @dataclass
 class AlbumCollection(TrackCollection):
@@ -516,14 +557,22 @@ class AlbumCollection(TrackCollection):
     albums: List[Artist] = field(default_factory=list)
 
     @property
-    def items(self) -> List[TrackItem]:
+    def items(self):
         if self._items:
-            return self._items
+            items_to_load = self._items
         else:
             if self.albums:
-                return sum(self.albums).items
+                items_to_load = sum(self.albums).items
             else:
-                return []
+                items_to_load = iter(())
+
+        yield from items_to_load
+
+    def alternate(self):
+        def new_items():
+            return itertools.chain(*zip(*[c.items for c in self.albums]))
+
+        return TrackCollection(id_="", _items=new_items())
 
 
 class Genre(TrackCollection):
@@ -539,11 +588,11 @@ class Genre(TrackCollection):
             return self._items
         else:
             if self.id_:
-                return get_recommendations_for_genre(
+                yield from get_recommendations_for_genre(
                     sp=self.sp, genre_names=[self.genre_name]
                 )
             else:
-                return []
+                yield from iter(())
 
 
 class SavedTracks(TrackCollection):
@@ -557,7 +606,7 @@ class SavedTracks(TrackCollection):
         if self._items:
             return self._items
         else:
-            return get_all_saved_tracks(sp=self.sp)
+            yield from get_all_saved_tracks(sp=self.sp)
 
 
 class Show(TrackCollection):
@@ -570,12 +619,12 @@ class Show(TrackCollection):
     @property
     def items(self) -> List[TrackItem]:
         if self._items:
-            return self._items
+            yield from self._items
         else:
             if self.id_:
-                return get_show_episodes(sp=self.sp, show_id=self.id_)
+                yield from get_show_episodes(sp=self.sp, show_id=self.id_)
             else:
-                return []
+                yield from iter(())
 
 
 class Track(TrackCollection):
@@ -588,9 +637,9 @@ class Track(TrackCollection):
     @property
     def items(self) -> List[TrackItem]:
         if self._items:
-            return self._items
+            yield from self._items
         else:
             if self.id_:
-                return [read_track_from_id(track_id=self.id_)]
+                yield read_track_from_id(track_id=self.id_)
             else:
-                return []
+                yield None

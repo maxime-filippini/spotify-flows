@@ -45,7 +45,9 @@ def get_album_songs(sp: ExtendedSpotify, *, album_id: str) -> List[TrackItem]:
 
     track_data = sp.album_tracks(album_id, limit=50, offset=0, market=None).get("items")
     track_ids = [track["id"] for track in track_data]
-    return [read_track_from_id(sp=sp, track_id=track_id) for track_id in track_ids]
+
+    for track_id in track_ids:
+        yield read_track_from_id(sp=sp, track_id=track_id)
 
 
 @login_if_missing(scope=None)
