@@ -140,6 +140,7 @@ dmypy.json
 .history/
 
 # Local files
-data/*.png
-data/*.p
-scripts/*.bat
+/data/*.png
+/data/*.jpg
+/data/*.p
+/scripts/*.bat
