@@ -4,16 +4,15 @@ from spotify_flows.examples.collections import (
     lofi,
     saved_tracks,
     on_repeat,
+    hits,
+    balkan,
 )
-from spotify_flows.database import create_spotify_database
+from spotify_flows.database import SpotifyDatabase
 
 
 def main():
-    db_path = Path("spotify_flows/data/spotify.db")
-
-    if not db_path.is_dir():
-        create_spotify_database(db_path=db_path)
-    on_repeat().to_database(db_path=db_path)
+    database = SpotifyDatabase("data/spotify.db", op_table="operations")
+    balkan().to_database(database)
 
 
 if __name__ == "__main__":

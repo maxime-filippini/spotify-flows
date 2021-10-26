@@ -1,0 +1,75 @@
+CREATE_AUDIO_FEATURES_TABLE: >
+  CREATE TABLE IF NOT EXISTS audio_features (
+    track_id TEXT PRIMARY KEY,
+    danceability REAL,
+    energy REAL,
+    key REAL,
+    loudness REAL,
+    mode REAL,
+    speechiness REAL,
+    acousticness REAL,
+    instrumentalness REAL,
+    liveness REAL,
+    valence REAL,
+    tempo REAL,
+    op_index INTEGER
+    )
+
+CREATE_OPS_TABLE: >
+  CREATE TABLE IF NOT EXISTS operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date DATE,
+    op_type TEXT
+  )
+
+CREATE_TRACKS_TABLE: >
+  CREATE TABLE IF NOT EXISTS tracks (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    popularity INTEGER,
+    album_id TEXT,
+    duration_ms INTEGER,
+    op_index INTEGER
+  )
+
+CREATE_ARTISTS_TABLE: >
+  CREATE TABLE IF NOT EXISTS artists (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    popularity INTEGER,
+    op_index INTEGER
+  )
+
+CREATE_ALBUMS_TABLE: >
+  CREATE TABLE IF NOT EXISTS albums (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    release_date DATE,
+    op_index INTEGER
+  )
+
+CREATE_ALBUM_ARTIST_TABLE: >
+  CREATE TABLE IF NOT EXISTS albums_artists (
+    artist_id TEXT,
+    album_id TEXT,
+    op_index INTEGER
+  )
+
+CREATE_COLLECTION_TABLE: >
+  CREATE TABLE IF NOT EXISTS tracks (
+    id TEXT PRIMARY KEY,
+    track_id TEXT
+  )
+
+CREATE_RELATED_TABLE: >
+  CREATE TABLE IF NOT EXISTS related (
+    artist_id TEXT,
+    related_artist_id TEXT
+  )
+
+CREATE_GENRE_TABLE: >
+  CREATE TABLE IF NOT EXISTS genres (
+    artist_id TEXT,
+    genre TEXT,
+    op_index INTEGER
+  )

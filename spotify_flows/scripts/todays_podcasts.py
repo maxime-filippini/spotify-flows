@@ -12,7 +12,7 @@ from spotify_flows.spotify.playlists import make_new_playlist, edit_playlist_det
 def todays_podcasts():
 
     # 1. Load data
-    with open("spotify_flows/data/podcast.yml") as f:
+    with open("data/podcast.yml") as f:
         data = yaml.load(f, Loader=yaml.FullLoader).get("list")
 
     # 2. Determine the date criteria

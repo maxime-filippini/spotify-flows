@@ -11,7 +11,7 @@ from typing import List
 from .data_structures import TrackItem
 from .data_structures import AlbumItem
 from .data_structures import ArtistItem
-from .login import login_if_missing
+from .login import login, login_if_missing
 from .classes import ExtendedSpotify
 from .tracks import read_track_from_id
 
@@ -83,3 +83,17 @@ def get_related_artists(sp: ExtendedSpotify, *, artist_id: str) -> List[ArtistIt
     """
     artists_dict = sp.artist_related_artists(artist_id=artist_id).get("artists")
     return [ArtistItem.from_dict(artist) for artist in artists_dict]
+
+
+@login_if_missing(scope=None)
+def read_artists_from_id(sp: ExtendedSpotify, *, artist_ids: List[str]) -> ArtistItem:
+    artist_data = []
+
+    remaining_ids = artist_ids
+
+    while remaining_ids:
+        n = min(len(remaining_ids), 50)
+        artist_data += sp.artists(artists=remaining_ids[:n]).get("artists")
+        remaining_ids = remaining_ids[n:]
+
+    return [ArtistItem.from_dict(artist_dict) for artist_dict in artist_data]

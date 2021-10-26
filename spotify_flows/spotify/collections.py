@@ -19,8 +19,10 @@ import pandas as pd
 import numpy as np
 
 # Local imports
+from spotify_flows.database import SpotifyDatabase
+
 from .login import login
-from .data_structures import TrackItem
+from .data_structures import SpotifyDataStructure, TrackItem
 
 from .tracks import get_track_id, read_track_from_id
 from .tracks import get_audio_features
@@ -30,8 +32,6 @@ from .podcasts import get_show_id
 from .podcasts import get_show_episodes
 from .user import get_all_saved_tracks
 from .user import get_recommendations_for_genre
-from spotify_flows.database import store_tracks_in_database
-from spotify_flows.database import build_collection_from_collection_id
 
 from .artists import get_artist_id
 from .artists import get_artist_albums
@@ -49,7 +49,7 @@ class TrackCollection:
     """Class representing a collection of tracks. Can be chained together through a
     variety of defined methods."""
 
-    read_items_from_db = lambda id_, db_path: build_collection_from_collection_id(
+    read_items_from_db = lambda id_, db_path: database.build_collection_from_collection_id(
         id_=id_, db_path=db_path
     )
 
@@ -58,6 +58,7 @@ class TrackCollection:
     )
 
     id_: str = ""
+    info: SpotifyDataStructure = None
     _items: List[Any] = field(default_factory=list)
     _audio_features_enriched: bool = False
 
@@ -67,7 +68,11 @@ class TrackCollection:
 
     @classmethod
     def from_id(cls, id_: str):
-        return cls(id_=id_)
+        return cls(id_=id_, info=None)
+
+    @classmethod
+    def from_item(cls, id_: str, item: SpotifyDataStructure):
+        return cls(id_=id_, info=item)
 
     @classmethod
     def from_db(cls, id_: str, db_path: str):
@@ -168,8 +173,7 @@ class TrackCollection:
         """
 
         # Enrich with audio features
-        self._items = self._enrich_with_audio_features(self.items)
-        tracks = copy.copy(self.items)
+        tracks = copy.copy(list(self.add_audio_features().items))
 
         # Extract data
         album_artist = [
@@ -341,6 +345,14 @@ class TrackCollection:
         new_items = items[trim_points[0] : trim_points[1] + 1]
         return TrackCollection(_items=new_items)
 
+    def add_audio_features(self) -> "TrackCollection":
+        def new_items():
+            for item in self.items:
+                item.audio_features = get_audio_features(track_ids=[item.id])[item.id]
+                yield item
+
+        return TrackCollection(_items=new_items(), _audio_features_enriched=True)
+
     def _enrich_with_audio_features(self, items: List[TrackItem]) -> List[TrackItem]:
         """Get items enriched with audio features
 
@@ -407,8 +419,14 @@ class TrackCollection:
             playlist_name = self.id_
         make_new_playlist(sp=self.sp, playlist_name=playlist_name, items=self.items)
 
-    def to_database(self, db_path: str) -> None:
-        store_tracks_in_database(collection=self, db_path=db_path)
+    def to_database(self, db: SpotifyDatabase) -> None:
+        db.store_tracks_in_database(collection=self)
+
+    def optimize(self, target_func) -> None:
+        items = list(self.items)
+        diffs = np.abs(np.array([target_func(item) for item in items]))
+        idx = np.where(diffs == diffs.min())[0][0]
+        return TrackCollection(_items=[items[idx]])
 
 
 @dataclass
@@ -488,7 +506,7 @@ class Artist(TrackCollection):
         # Build album collections
         album_data = get_artist_albums(artist_id=self.id_)
         album_collection_items = [Album.from_id(album.id) for album in album_data]
-        album_collection = AlbumCollection(albums=album_collection_items)
+        album_collection = CollectionCollection(collections=album_collection_items)
 
         # Retrieve items from album collection
         if album_collection:
@@ -514,26 +532,37 @@ class Artist(TrackCollection):
             Artist(id_=artist_item.id) for artist_item in related_artist_items[:n]
         ]
 
-        return ArtistCollection(artists=related_artists)
+        return ArtistCollection(collections=related_artists)
 
 
 @dataclass
-class ArtistCollection(TrackCollection):
-    """Class representing a collection of artists"""
-
-    artists: List[Artist] = field(default_factory=list)
+class CollectionCollection(TrackCollection):
+    collections: List[TrackCollection] = field(default_factory=list)
 
     @property
     def items(self) -> List[TrackItem]:
         if self._items:
             items_to_load = self._items
         else:
-            if self.artists:
-                items_to_load = sum(self.artists).items
+            if self.collections:
+                items_to_load = sum(self.collections).items
             else:
                 items_to_load = iter(())
 
         yield from items_to_load
+
+    def alternate(self):
+        def new_items():
+            return itertools.chain(*zip(*[c.items for c in self.collections]))
+
+        return TrackCollection(id_="", _items=new_items())
+
+
+@dataclass
+class ArtistCollection(CollectionCollection):
+    """Class representing a collection of artists"""
+
+    collections: List[Artist] = field(default_factory=list)
 
     def popular(self) -> TrackCollection:
         """Popular songs of a given artist collection
@@ -541,38 +570,7 @@ class ArtistCollection(TrackCollection):
         Returns:
             TrackCollection: New collection with all popular songs
         """
-        return sum([artist.popular() for artist in self.artists])
-
-    def alternate(self):
-        def new_items():
-            return itertools.chain(*zip(*[c.items for c in self.artists]))
-
-        return TrackCollection(id_="", _items=new_items())
-
-
-@dataclass
-class AlbumCollection(TrackCollection):
-    """Class representing a collection of albums"""
-
-    albums: List[Artist] = field(default_factory=list)
-
-    @property
-    def items(self):
-        if self._items:
-            items_to_load = self._items
-        else:
-            if self.albums:
-                items_to_load = sum(self.albums).items
-            else:
-                items_to_load = iter(())
-
-        yield from items_to_load
-
-    def alternate(self):
-        def new_items():
-            return itertools.chain(*zip(*[c.items for c in self.albums]))
-
-        return TrackCollection(id_="", _items=new_items())
+        return sum([artist.popular() for artist in self.collections])
 
 
 class Genre(TrackCollection):
