@@ -15,6 +15,9 @@ numpy = "*"
 pandas = "*"
 apscheduler = "*"
 networkx = "*"
+matplotlib = "*"
+scipy = "*"
+tqdm = "*"
 
 [dev-packages]
 pytest = "*"

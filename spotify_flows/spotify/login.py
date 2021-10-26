@@ -27,30 +27,13 @@ def login(scope: str) -> ExtendedSpotify:
     """
 
     load_dotenv()  # Load environment variables
-
     sp_oauth = SpotifyOAuth(
-        client_id=os.environ.get("SPOTIFY_CLIENT_ID"),
-        client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET"),
-        redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI"),
+        client_id=os.environ.get("SPOTIPY_CLIENT_ID"),
+        client_secret=os.environ.get("SPOTIPY_CLIENT_SECRET"),
+        redirect_uri=os.environ.get("SPOTIPY_REDIRECT_URI"),
         scope=scope,
     )
-
-    access_token = ""
-    token_info = sp_oauth.get_cached_token()
-
-    if token_info:
-        access_token = token_info["access_token"]
-    else:
-        auth_url = sp_oauth.get_authorize_url()
-        print(auth_url)
-        response = input(
-            "Paste the above link into your browser, then paste the redirect url here: "
-        )
-        code = sp_oauth.parse_response_code(response)
-        token_info = sp_oauth.get_access_token(code)
-        access_token = token_info["access_token"]
-
-    return ExtendedSpotify(auth=access_token)
+    return ExtendedSpotify(auth_manager=sp_oauth)
 
 
 def login_if_missing(scope: str) -> Callable[[Callable[[ExtendedSpotify], Any]], Any]:

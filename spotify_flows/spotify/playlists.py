@@ -78,7 +78,7 @@ def make_new_playlist(
         playlist_id = get_playlist_id(sp=sp, playlist_name=playlist_name)
 
     wipe_playlist(sp=sp, playlist_id=playlist_id)
-    import_items_to_playlist(sp=sp, items=items, playlist_id=playlist_id)
+    import_items_to_playlist(sp=sp, items=list(items), playlist_id=playlist_id)
     return playlist_id
 
 

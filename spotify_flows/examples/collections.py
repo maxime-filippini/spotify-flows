@@ -2,6 +2,7 @@ from spotify_flows.spotify.collections import Artist
 from spotify_flows.spotify.collections import Playlist
 from spotify_flows.spotify.collections import Track
 from spotify_flows.spotify.collections import SavedTracks
+from spotify_flows.spotify.collections import CollectionCollection
 
 
 def combination_of_artists():
@@ -55,3 +56,21 @@ def random_from_playlist():
         "lofi hip hop music - beats to relax/study to"
     ).random(1)
     return playlist
+
+
+def hits():
+    playlist = Playlist.from_id("37i9dQZEVXbNG2KDcFcKOF")
+    return playlist
+
+
+def balkan():
+    collection = CollectionCollection(
+        id_="",
+        collections=[
+            Playlist.from_id("40OzmuANnGkN9AumRu4tin"),
+            Playlist.from_id("3y2i9pR11PGPw7FGIcAEnh"),
+            Playlist.from_id("6KOETTV6f8K2yzVebCADsM"),
+        ],
+    )
+
+    return collection

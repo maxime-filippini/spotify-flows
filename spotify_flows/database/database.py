@@ -3,10 +3,15 @@
 """
 
 # Standard library imports
+import yaml
 import random
 import sqlite3
+import functools
+from tqdm import tqdm
 from typing import List
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from dataclasses import dataclass, field
 
 # Third party imports
 import pandas as pd
@@ -14,202 +19,229 @@ import pandas as pd
 # Local imports
 from spotify_flows.spotify.data_structures import TrackItem
 
-# Schemas
+# Main body
+def connect_me(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        with self.connect():
+            rv = func(self, *args, **kwargs)
+        return rv
 
-CREATE_AUDIO_FEATURES_TABLE = """
-CREATE TABLE IF NOT EXISTS audio_features (
- track_id TEXT PRIMARY KEY,
- danceability REAL,
- energy REAL,
- key REAL,
- loudness REAL,
- mode REAL,
- speechiness REAL,
- acousticness REAL,
- instrumentalness REAL,
- liveness REAL,
- valence REAL,
- tempo REAL,
- op_index INTEGER
-)"""
-
-CREATE_OPS_TABLE = "CREATE TABLE IF NOT EXISTS operations (id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE, op_type TEXT)"
-CREATE_TRACKS_TABLE = "CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, name TEXT, popularity INTEGER, album_id TEXT, duration_ms INTEGER, op_index INTEGER)"
-CREATE_ARTISTS_TABLE = "CREATE TABLE IF NOT EXISTS artists (id TEXT PRIMARY KEY, name TEXT, popularity INTEGER, op_index INTEGER)"
-CREATE_ALBUMS_TABLE = "CREATE TABLE IF NOT EXISTS albums (id TEXT PRIMARY KEY, name TEXT, release_date DATE, op_index INTEGER)"
-CREATE_ALBUM_ARTIST_TABLE = "CREATE TABLE IF NOT EXISTS albums_artists (artist_id TEXT, album_id TEXT, op_index INTEGER)"
-CREATE_COLLECTION_TABLE = (
-    "CREATE TABLE IF NOT EXISTS tracks (id TEXT PRIMARY KEY, track_id TEXT)"
-)
-
-table_schemas = [
-    CREATE_OPS_TABLE,
-    CREATE_AUDIO_FEATURES_TABLE,
-    CREATE_TRACKS_TABLE,
-    CREATE_ALBUMS_TABLE,
-    CREATE_ARTISTS_TABLE,
-    CREATE_ALBUM_ARTIST_TABLE,
-    CREATE_COLLECTION_TABLE,
-]
+    return wrapper
 
 
-def _op_index(conn: sqlite3.Connection) -> int:
-    """Get operation index to be used
+@dataclass
+class Database:
+    file_path: str
+    conn: sqlite3.Connection = field(default=None, init=False)
 
-    Args:
-        conn (sqlite3.Connection): Database connection
+    @contextmanager
+    def connect(self):
+        try:
+            self.conn = sqlite3.connect(self.file_path)
+            yield
+        finally:
+            self.conn = None
 
-    Returns:
-        int: Operation index
-    """
-    c = conn.cursor()
-    c.execute("SELECT MAX(id) from operations")
-    max_id = c.fetchall()[0][0]
+    @connect_me
+    def table_contents(self, tables: List[str]) -> pd.DataFrame:
+        if isinstance(tables, str):
+            return pd.read_sql(f"SELECT * FROM {tables}", self.conn)
+        elif isinstance(tables, list):
+            return [
+                pd.read_sql(f"SELECT * FROM {table}", self.conn) for table in tables
+            ]
 
-    if max_id is None:
-        max_id = 0
+    @connect_me
+    def wipe_table(self, table: str) -> None:
+        c = self.conn.cursor()
+        c.execute(f"DELETE FROM {table}")
+        self.conn.commit()
 
-    return max_id + 1
+    @connect_me
+    def delete_table(self, table: str) -> None:
+        c = self.conn.cursor()
+        c.execute(f"DROP TABLE {table}")
+        self.conn.commit()
 
+    @connect_me
+    def create_database_file(self, schemas: List[str]) -> None:
+        c = self.conn.cursor()
+        for schema in schemas:
+            c.execute(schema)
 
-def _record_operation(conn: sqlite3.Connection, op_type: str) -> None:
-    """Record an operation into the operations table of the database
+    @connect_me
+    def run_query(self, query: str) -> None:
+        c = self.conn.cursor()
+        c.execute(query)
+        self.conn.commit()
 
-    Args:
-        conn (sqlite3.Connection): Database connection
-        op_type (str): Type of operation
-    """
-
-    c = conn.cursor()
-    c.execute(
-        f"INSERT INTO operations (date, op_type) VALUES ('{datetime.now(timezone.utc)}', '{op_type}')"
-    )
-    conn.commit()
-    c.close()
-
-
-def create_spotify_database(db_path: str) -> None:
-    """Create the database file and its tables
-
-    Args:
-        db_path (str): Path to database file
-    """
-    with sqlite3.connect(db_path) as conn:
-        c = conn.cursor()
-        for table_schema in table_schemas:
-            c.execute(table_schema)
-        _record_operation(conn, "db_creation")
+    @connect_me
+    def write_dataframe(self, df: pd.DataFrame, table: str, **kwargs) -> None:
+        df.to_sql(table, self.conn, **kwargs)
 
 
-def build_collection_from_track_ids(
-    db_path: str, track_ids: List[str]
-) -> List[TrackItem]:
+@dataclass
+class SpotifyDatabase(Database):
+    op_table: str
 
-    with sqlite3.connect(db_path) as conn:
-        df_tracks = pd.read_sql(f"SELECT * FROM tracks", con=conn)
-        df_albums = pd.read_sql(f"SELECT * FROM albums", con=conn)
-        df_albums_artists = pd.read_sql(f"SELECT * FROM albums_artists", con=conn)
-        df_artists = pd.read_sql(f"SELECT * FROM artists", con=conn)
-        df_audio_features = pd.read_sql(f"SELECT * FROM audio_features", con=conn)
+    @connect_me
+    def _record_operation(self, op_type: str) -> None:
+        c = self.conn.cursor()
+        c.execute(
+            f"INSERT INTO {self.op_table} (date, op_type) VALUES ('{datetime.now(timezone.utc)}', '{op_type}')"
+        )
+        self.conn.commit()
+        c.close()
 
-    # Format the data
-    track_data = df_tracks.loc[df_tracks["id"].isin(track_ids)].to_dict("records")
+    @connect_me
+    def _op_index(self) -> int:
+        """Get operation index to be used
 
-    collection = []
-    for track_dict in track_data:
-        # Get album data
-        album_id = track_dict["album_id"]
-        album_dict = df_albums.loc[df_albums["id"] == album_id].to_dict("records")[0]
+        Args:
+            conn (sqlite3.Connection): Database connection
 
-        # Get artists ids
-        artist_ids = df_albums_artists.loc[
-            df_albums_artists["album_id"] == album_id, "artist_id"
-        ].tolist()
-        artist_dict = df_artists.loc[df_artists["id"].isin(artist_ids)].to_dict(
-            "records"
+        Returns:
+            int: Operation index
+        """
+        c = self.conn.cursor()
+        c.execute("SELECT MAX(id) from operations")
+        max_id = c.fetchall()[0][0]
+
+        if max_id is None:
+            max_id = 0
+
+        return max_id + 1
+
+    @connect_me
+    def create_spotify_database(self, schema_file_path: str) -> None:
+        with open(schema_file_path, "r") as f:
+            data = yaml.load(f, Loader=yaml.FullLoader)
+        self.create_database_file(schemas=data.values())
+        self._record_operation(self.conn, op_type="db_creation")
+
+    def build_collection_from_track_ids(self, track_ids: List[str]) -> List[TrackItem]:
+
+        (
+            df_tracks,
+            df_albums,
+            df_albums_artists,
+            df_artists,
+            df_audio_features,
+        ) = self.table_contents(
+            ["tracks", "albums", "albums_artists", "artists", "audio_features"]
         )
 
-        # Add artist data to album
-        album_dict["artists"] = artist_dict
+        # Format the data
+        track_data = df_tracks.loc[df_tracks["id"].isin(track_ids)].to_dict("records")
 
-        # Add audio features
-        audio_features_dict = df_audio_features[
-            df_audio_features["track_id"] == track_dict["id"]
-        ].to_dict("records")[0]
+        collection = []
+        for track_dict in track_data:
+            # Get album data
+            album_id = track_dict["album_id"]
+            album_dict = df_albums.loc[df_albums["id"] == album_id].to_dict("records")[
+                0
+            ]
 
-        # Add to track
-        track_dict["album"] = album_dict
-        track_dict["audio_features"] = audio_features_dict
+            # Get artists ids
+            artist_ids = df_albums_artists.loc[
+                df_albums_artists["album_id"] == album_id, "artist_id"
+            ].tolist()
+            artist_dict = df_artists.loc[df_artists["id"].isin(artist_ids)].to_dict(
+                "records"
+            )
 
-        collection.append(TrackItem.from_dict(track_dict))
+            # Add artist data to album
+            album_dict["artists"] = artist_dict
 
-    return collection
+            # Add audio features
+            audio_features_dict = df_audio_features[
+                df_audio_features["track_id"] == track_dict["id"]
+            ].to_dict("records")[0]
 
+            # Add to track
+            track_dict["album"] = album_dict
+            track_dict["audio_features"] = audio_features_dict
 
-def build_collection_from_collection_id(id_: str, db_path: str) -> List[TrackItem]:
-    with sqlite3.connect(db_path) as conn:
-        df_collections = pd.read_sql(f"SELECT * FROM collections", con=conn)
-    track_ids = df_collections.loc[df_collections["id"] == id_, "track_id"].tolist()
-    return build_collection_from_track_ids(db_path=db_path, track_ids=track_ids)
+            collection.append(TrackItem.from_dict(track_dict))
 
+        return collection
 
-def build_random_collection(db_path: str, N: int) -> List[TrackItem]:
-    with sqlite3.connect(db_path) as conn:
-        df_tracks = pd.read_sql(f"SELECT * FROM tracks", con=conn)
-    track_ids = random.sample(list(df_tracks.loc[:, "id"].values), k=N)
-    return build_collection_from_track_ids(db_path=db_path, track_ids=track_ids)
+    @connect_me
+    def build_collection_from_collection_id(self, id_: str) -> List[TrackItem]:
+        df_collections = self.table_contents("collections")
 
+        track_ids = df_collections.loc[df_collections["id"] == id_, "track_id"].tolist()
+        return self.build_collection_from_track_ids(track_ids=track_ids)
 
-def store_tracks_in_database(collection, db_path: str) -> None:
-    """Collection object to database
+    @connect_me
+    def build_random_collection(self, N: int) -> List[TrackItem]:
+        df_tracks = self.table_contents("tracks")
+        track_ids = random.sample(list(df_tracks.loc[:, "id"].values), k=N)
+        return self.build_collection_from_track_ids(track_ids=track_ids)
 
-    Args:
-        collection (TrackCollection): Collection to store
-        db_path (str): Path to database
-    """
+    @connect_me
+    def store_tracks_in_database(self, collection) -> None:
+        (
+            df_all_tracks,
+            df_all_artists,
+            df_all_albums,
+            df_audio_features,
+            df_album_artist,
+        ) = collection.to_dataframes()
 
-    (
-        df_all_tracks,
-        df_all_artists,
-        df_all_albums,
-        df_audio_features,
-        df_album_artist,
-    ) = collection.to_dataframes()
-
-    table_map = {
-        "tracks": df_all_tracks,
-        "artists": df_all_artists,
-        "albums": df_all_albums,
-        "audio_features": df_audio_features,
-        "albums_artists": df_album_artist,
-    }
-
-    with sqlite3.connect(db_path) as conn:
+        table_map = {
+            "tracks": df_all_tracks,
+            "artists": df_all_artists,
+            "albums": df_all_albums,
+            "audio_features": df_audio_features,
+            "albums_artists": df_album_artist,
+        }
 
         for table, df_data in table_map.items():
-            df_existing = pd.read_sql(f"SELECT * FROM {table}", con=conn)
-            for col in df_existing.columns:
-                if "date" in col:
-                    df_existing.loc[:, col] = pd.to_datetime(
-                        df_existing[col], format="%Y-%m-%d"
-                    )
+            self.enrich_database_table(df_data=df_data, table=table)
 
-            # Only keep new tracks
+        df_collection = df_all_tracks.loc[:, ["id"]].rename(columns={"id": "track_id"})
+        df_collection.loc[:, "id"] = collection.id_
+
+        self.write_dataframe(
+            df_collection, "collections", if_exists="append", index=False
+        )
+        self._record_operation(op_type="collection_addition")
+
+    @connect_me
+    def enrich_database_table(self, df_data: pd.DataFrame, table: str) -> None:
+
+        df_existing = self.table_contents(table)
+
+        # Parse dates (TODO: Integrate into table reading)
+        for col in df_existing.columns:
+            if "date" in col:
+                df_existing.loc[:, col] = pd.to_datetime(
+                    df_existing[col], format="%Y-%m-%d"
+                )
+
+        # Only keep new tracks
+        if len(df_data) > 0:
             df_merge = df_data.merge(right=df_existing, how="left", indicator=True)
 
             df_to_add = (
                 df_merge.loc[df_merge["_merge"] == "left_only"]
                 .drop(columns="_merge")
+                .loc[:, df_existing.columns]
                 .drop_duplicates()
             )
 
             # Add to database
-            if len(df_to_add) > 0:
-                df_to_add.loc[:, "op_index"] = _op_index(conn)
-                df_to_add.to_sql(table, con=conn, if_exists="append", index=False)
-                _record_operation(conn, op_type=f"record_addition_({table})")
+            df_to_add.loc[:, "op_index"] = self._op_index()
 
-        df_collection = df_all_tracks.loc[:, ["id"]].rename(columns={"id": "track_id"})
-        df_collection.loc[:, "id"] = collection.id_
-        df_collection.to_sql("collections", con=conn, if_exists="append", index=False)
-        _record_operation(conn, op_type="collection_addition")
+            if "id" in df_to_add.columns:
+                valid_ids = ~df_to_add["id"].isin(df_existing["id"])
+                self.write_dataframe(
+                    df_to_add[valid_ids], table, if_exists="append", index=False
+                )
+
+            else:
+                self.write_dataframe(df_to_add, table, if_exists="append", index=False)
+
+            self._record_operation(op_type=f"record_addition_({table})")

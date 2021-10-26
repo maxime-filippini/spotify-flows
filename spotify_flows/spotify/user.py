@@ -3,6 +3,7 @@
 """
 
 # Standard library imports
+import copy
 from typing import Any
 from typing import List
 from typing import Dict
@@ -85,13 +86,14 @@ def get_all_saved_tracks(sp: ExtendedSpotify) -> List[TrackItem]:
         List[TrackItem]: Saved tracks
     """
 
-    all_results = sp.current_user_saved_tracks(limit=50)
-    next = all_results.get("next")
+    raw_results = sp.current_user_saved_tracks(limit=50)
+    next = raw_results.get("next")
+    all_results = raw_results.get("items")
 
     while next:
         raw_results = sp.next(raw_results)
         next = raw_results.get("next")
-        new_results = raw_results
+        new_results = raw_results.get("items")
         all_results = all_results + new_results
 
     for result in all_results:

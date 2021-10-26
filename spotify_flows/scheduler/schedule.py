@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BlockingScheduler
 
-from spotify_flows.database import build_random_collection
+from spotify_flows.database import SpotifyDatabase
 from spotify_flows.spotify.collections import TrackCollection
 from spotify_flows.scripts.todays_podcasts import todays_podcasts
 from spotify_flows.spotify.login import login
@@ -10,7 +10,8 @@ scheduler = BlockingScheduler()
 
 
 def random_playlist():
-    items = build_random_collection(db_path="spotify_flows/data/spotify.db", N=20)
+    db = SpotifyDatabase("spotify_flows/data/spotify.db")
+    items = db.build_random_collection(N=20)
     TrackCollection(_items=items, id_="x").to_playlist(
         playlist_name="My random playlist"
     )

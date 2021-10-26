@@ -66,6 +66,7 @@ class ArtistItem(SpotifyDataStructure):
     id: str = ""
     name: str = ""
     popularity: int = 0
+    genres: List[str] = field(default_factory=list)
 
 
 @dataclass(unsafe_hash=True)
