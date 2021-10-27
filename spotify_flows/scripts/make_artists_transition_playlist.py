@@ -24,8 +24,6 @@ def main(start_artist_id: str, end_artist_id: str):
     start_artist = read_artists_from_id(artist_ids=[start_artist_id])[0]
     end_artist = read_artists_from_id(artist_ids=[end_artist_id])[0]
 
-    # Modify edges of the graph
-
     path = nx.dijkstra_path(
         artist_graph,
         source=start_artist_id,
@@ -36,8 +34,11 @@ def main(start_artist_id: str, end_artist_id: str):
     )
 
     start = Artist.from_id(path[0]).popular().add_audio_features().random(1)
-    target_energy = copy.copy(list(start.items)[0].audio_features.energy)
-    target_func = lambda x: x.audio_features.energy - target_energy
+    target_audio = copy.copy(list(start.items)[0].audio_features)
+
+    target_func = lambda x: (x.audio_features.energy - target_audio.energy) + (
+        x.audio_features.danceability - target_audio.danceability
+    )
 
     CollectionCollection(
         id_="collection",
@@ -55,7 +56,7 @@ def main(start_artist_id: str, end_artist_id: str):
 if __name__ == "__main__":
     raise SystemExit(
         main(
-            start_artist_id="58Wsq5pz5tOvWXBR8hOfxg",
-            end_artist_id="3FoFW2AoUGRHBacC6i4x4p",
+            start_artist_id="4ufkY8hmhmYl4aCnzv3dLE",
+            end_artist_id="5POPLEqoZcENY4ZNXQWZHB",
         )
     )

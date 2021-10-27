@@ -15,8 +15,9 @@ from typing import Callable
 from dataclasses import dataclass, field, asdict
 
 # Third party imports
-import pandas as pd
 import numpy as np
+import pandas as pd
+import networkx as nx
 
 # Local imports
 from spotify_flows.database import SpotifyDatabase
@@ -49,9 +50,7 @@ class TrackCollection:
     """Class representing a collection of tracks. Can be chained together through a
     variety of defined methods."""
 
-    read_items_from_db = lambda id_, db_path: database.build_collection_from_collection_id(
-        id_=id_, db_path=db_path
-    )
+    read_items_from_db = lambda id_, db: db.build_collection_from_collection_id(id_=id_)
 
     sp = login(
         scope="playlist-modify-private playlist-modify-public user-read-playback-position user-library-read"
@@ -76,7 +75,8 @@ class TrackCollection:
 
     @classmethod
     def from_db(cls, id_: str, db_path: str):
-        items = cls.read_items_from_db(id_=id_, db_path=db_path)
+        db = SpotifyDatabase(db_path, op_table="table")
+        items = cls.read_items_from_db(id_=id_, db=db)
         return TrackCollection(id_=id_, _items=items)
 
     @classmethod
@@ -343,7 +343,7 @@ class TrackCollection:
             trim_points = (n_below_min + 1, n_below_max)
 
         new_items = items[trim_points[0] : trim_points[1] + 1]
-        return TrackCollection(_items=new_items)
+        return TrackCollection(_items=(i for i in new_items))
 
     def add_audio_features(self) -> "TrackCollection":
         def new_items():
@@ -422,11 +422,67 @@ class TrackCollection:
     def to_database(self, db: SpotifyDatabase) -> None:
         db.store_tracks_in_database(collection=self)
 
-    def optimize(self, target_func) -> None:
+    def optimize(self, target_func, N: int = 1) -> None:
         items = list(self.items)
         diffs = np.abs(np.array([target_func(item) for item in items]))
-        idx = np.where(diffs == diffs.min())[0][0]
-        return TrackCollection(_items=[items[idx]])
+        idx = np.argsort(diffs)
+        n = min(N, len(items))
+        return TrackCollection(_items=list(np.array(items)[idx[:n]]))
+
+    def complex_sort(
+        self, by: str = "artist", graph: nx.Graph = nx.Graph()
+    ) -> "TrackCollection":
+        items = list(self.items)
+
+        def new_items():
+            unique_artists = list(set([item.album.artists[0].id for item in items]))
+
+            artists = [
+                (
+                    artist_id,
+                    [item for item in items if item.album.artists[0].id == artist_id],
+                )
+                for artist_id in unique_artists
+            ]
+
+            remaining_artists = artists
+            latest_artist = remaining_artists.pop(0)
+
+            new_items_ = [track for track in latest_artist[1]]
+
+            while remaining_artists:
+                # Find the closest artist
+
+                all_path_lengths = []
+
+                for artist in remaining_artists:
+                    try:
+                        path_length = nx.shortest_path_length(
+                            graph,
+                            source=latest_artist[0],
+                            target=artist[0],
+                            weight="weight",
+                        )
+                    except nx.NetworkXNoPath as e:
+                        path_length = 9999999
+
+                    all_path_lengths.append(path_length)
+
+                # Get the minimum
+                all_path_lengths = np.array(all_path_lengths)
+                min_idx = np.where(all_path_lengths == all_path_lengths.min())[0][0]
+
+                # Set the latest artist
+                latest_artist = remaining_artists.pop(min_idx)
+
+                # Add the tracks
+                new_items_ += [track for track in latest_artist[1]]
+
+            return (item for item in new_items_)
+
+        return TrackCollection(
+            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
+        )
 
 
 @dataclass

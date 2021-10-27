@@ -15,29 +15,58 @@ from spotify_flows.database import SpotifyDatabase
 
 def main():
     db = SpotifyDatabase("data/spotify.db", op_table="operations")
-    df, df_genres, df_artists = db.table_contents(["related", "genres", "artists"])
+    df_related, df_genres, df_artists = db.table_contents(
+        ["related", "genres", "artists"]
+    )
 
     G = nx.Graph()
-    artists = list(df["artist_id"].unique())
 
-    for artist in tqdm(artists):
-        rel = df.loc[df["artist_id"] == artist, "related_artist_id"].unique()
-        genres = (
-            df_genres.loc[df_genres["artist_id"] == artist, "genre"].unique().tolist()
+    # Build dataframe to build the nodes
+    # artist_id, related_id, genres, popularity
+    df_packed_genres = (
+        df_genres.groupby("artist_id")
+        .apply(lambda df: df["genre"].unique().tolist())
+        .reset_index()
+        .rename(columns={0: "genre"})
+    )
+
+    df_nodes = df_artists.merge(
+        df_packed_genres, left_on="id", right_on="artist_id"
+    ).loc[:, ["id", "genre", "popularity"]]
+
+    node_data = [(d.pop("id"), d) for d in df_nodes.to_dict("records")]
+
+    G.add_nodes_from(node_data)
+
+    # Build dataframe to build the edges
+    # artist_id, relative_artist_id, pop_diff
+    df_edges = (
+        df_related.merge(
+            df_artists[["id", "popularity"]],
+            left_on="artist_id",
+            right_on="id",
+            how="inner",
         )
+        .merge(
+            df_artists[["id", "popularity"]],
+            left_on="related_artist_id",
+            right_on="id",
+            how="inner",
+        )
+        .loc[:, ["artist_id", "related_artist_id", "popularity_x", "popularity_y"]]
+    )
 
-        artist_popularity = df_artists.loc[
-            df_artists["id"] == artist, "popularity"
-        ].values[0]
+    df_edges.loc[:, "pop_diff"] = (
+        df_edges["popularity_x"] - df_edges["popularity_y"]
+    ).abs()
+    df_edges.drop(columns=["popularity_x", "popularity_y"], inplace=True)
 
-        G.add_node(artist, genres=genres, popularity=artist_popularity)
+    edge_data = [
+        (d.pop("artist_id"), d.pop("related_artist_id"), d)
+        for d in df_edges.to_dict("records")
+    ]
 
-        for r in rel:
-            rel_popularity = df_artists.loc[df_artists["id"] == r, "popularity"].values[
-                0
-            ]
-
-            G.add_edge(artist, r, pop_diff=abs(artist_popularity - rel_popularity))
+    G.add_edges_from(edge_data)
 
     with open("data/artist_graph.p", "wb") as f:
         pickle.dump(G, f)
