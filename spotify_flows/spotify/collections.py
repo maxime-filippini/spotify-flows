@@ -486,6 +486,39 @@ class TrackCollection:
 
 
 @dataclass
+class TestPlaylist(TrackCollection):
+    @classmethod
+    def func_get_id(cls, name):
+        return get_playlist_id(sp=cls.sp, playlist_name=name)
+
+    @property
+    def items(self):
+
+        if self._items:
+            yield from self._item
+        else:
+            if self.id_:
+                yield from self.item_gen(
+                    SpotifyDatabase("data/spotify.db", op_table="operations")
+                )
+
+            else:
+                yield from iter(())
+
+    def item_gen(self, db):
+        if db.playlist_exists(self.id_):
+            tracks = db.load_playlist(playlist_id=self.id_)
+            yield from tracks
+
+        else:
+            track_gen = get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
+
+            for track in track_gen:
+                db.add_track(track_item=track)
+                yield track
+
+
+@dataclass
 class Playlist(TrackCollection):
     """Class representing a Playlist's track contents"""
 

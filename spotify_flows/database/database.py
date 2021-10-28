@@ -9,6 +9,7 @@ import sqlite3
 import functools
 from tqdm import tqdm
 from typing import List
+from dataclasses import asdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -17,7 +18,12 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 # Local imports
-from spotify_flows.spotify.data_structures import TrackItem
+from spotify_flows.spotify.data_structures import (
+    AlbumItem,
+    ArtistItem,
+    AudioFeaturesItem,
+    TrackItem,
+)
 
 # Main body
 def connect_me(func):
@@ -38,10 +44,11 @@ class Database:
     @contextmanager
     def connect(self):
         try:
-            self.conn = sqlite3.connect(self.file_path)
+            if not self.conn:
+                self.conn = sqlite3.connect(self.file_path)
             yield
         finally:
-            self.conn = None
+            pass
 
     @connect_me
     def table_contents(self, tables: List[str]) -> pd.DataFrame:
@@ -79,6 +86,14 @@ class Database:
     @connect_me
     def write_dataframe(self, df: pd.DataFrame, table: str, **kwargs) -> None:
         df.to_sql(table, self.conn, **kwargs)
+
+    @connect_me
+    def select(self, query: str) -> pd.DataFrame:
+        return pd.read_sql(query, self.conn)
+
+    @connect_me
+    def table_columns(self, table: str) -> List[str]:
+        return self.select(f"SELECT * FROM {table} LIMIT 1").columns.tolist()
 
 
 @dataclass
@@ -245,3 +260,73 @@ class SpotifyDatabase(Database):
                 self.write_dataframe(df_to_add, table, if_exists="append", index=False)
 
             self._record_operation(op_type=f"record_addition_({table})")
+
+    @connect_me
+    def playlist_exists(self, id_: str):
+        out = self.select(f"SELECT * FROM collections WHERE id = '{id_}'")
+        return len(out) > 0
+
+    @connect_me
+    def load_playlist(self, playlist_id: str):
+        df_collections = self.select(
+            f"SELECT DISTINCT track_id FROM collections WHERE id = '{playlist_id}'"
+        )
+        track_ids = df_collections["track_id"].tolist()
+
+        df_tracks = self.table_contents("tracks")
+        track_dict = df_tracks.set_index("id").to_dict("index")
+
+        return [TrackItem.from_dict(track_dict[track_id]) for track_id in track_ids]
+
+    @connect_me
+    def add_collection(self, collection_id: str, tracks: List[TrackItem]):
+        df = pd.DataFrame(
+            data={"id": collection_id, "track_id": [track.id for track in tracks]}
+        )
+        self.enrich_database_table(df_data=df, table="collections")
+
+        for track_item in tracks:
+            self.add_track(track_item=track_item)
+
+    @connect_me
+    def add_artist(self, artist_item: ArtistItem) -> None:
+        artist_dict = asdict(artist_item)
+        self.enrich_database_table(
+            df_data=pd.DataFrame(data=[artist_dict]), table="artists"
+        )
+        self.add_genres(artist_id=artist_item.id, genres=artist_item.genres)
+
+    @connect_me
+    def add_genres(self, artist_id: str, genres: List[str]):
+        if genres:
+            df = pd.DataFrame(data={"genre": genres, "artist_id": artist_id})
+            self.enrich_database_table(df_data=df, table="genres")
+
+    @connect_me
+    def add_album(self, album_item: AlbumItem):
+        album_dict = asdict(album_item)
+        self.enrich_database_table(df_data=pd.DataFrame(album_dict), table="albums")
+
+        artist_ids = [artist.id for artist in album_item.artists]
+        self.add_album_artists(album_id=album_item.id, artist_ids=artist_ids)
+
+        for artist_item in album_item.artists:
+            self.add_artist(artist_item=artist_item)
+
+    @connect_me
+    def add_album_artists(self, album_id: str, artist_ids: List[str]):
+        df = pd.DataFrame(data={"artist_id": artist_ids, "album_id": album_id})
+        self.enrich_database_table(df_data=df, table="albums_artists")
+
+    @connect_me
+    def add_track(self, track_item: TrackItem):
+        track_dict = asdict(track_item)
+        track_dict["album_id"] = track_item.album.id
+        self.enrich_database_table(df_data=pd.DataFrame(track_dict), table="tracks")
+        self.add_album(album_item=track_item.album)
+
+    @connect_me
+    def add_audio_features(self, artist_id: str, audio_features: AudioFeaturesItem):
+        audio_features_dict = asdict(audio_features)
+        df = pd.DataFrame(data=[{"artist_id": artist_id, **audio_features_dict}])
+        self.enrich_database_table(df_data=df, table="audio_features")
