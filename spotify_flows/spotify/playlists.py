@@ -56,7 +56,7 @@ def import_items_to_playlist(
         )
 
 
-@login_if_missing(scope="playlist-modify-private")
+@login_if_missing(scope="playlist-modify-private playlist-modify-public")
 def make_new_playlist(
     sp: ExtendedSpotify,
     *,
