@@ -18,6 +18,7 @@ networkx = "*"
 matplotlib = "*"
 scipy = "*"
 tqdm = "*"
+flows = {editable = true, path = "."}
 
 [dev-packages]
 pytest = "*"
