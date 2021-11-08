@@ -4,32 +4,32 @@
 
 # Standard library imports
 import copy
-from typing import Any
 from typing import Dict
 from typing import List
+from typing import Any
+from dataclasses import asdict
 
 # Third party imports
 
 # Local imports
+from .albums import get_album_info
 from .login import login_if_missing
 from .classes import ExtendedSpotify
-from .data_structures import TrackItem
-from .data_structures import AudioFeaturesItem
+from .artists import read_artists_from_id
 
 # Main body
 @login_if_missing(scope=None)
-def read_track_from_id(sp: ExtendedSpotify, *, track_id: str) -> TrackItem:
-    """Build a track item from a given ID
-
-    Args:
-        sp (ExtendedSpotify): Spotify object
-        track_id (str): Track ID
-
-    Returns:
-        TrackItem: Track object
-    """
+def read_track_from_id(sp: ExtendedSpotify, *, track_id: str) -> Dict[str, Any]:
     track_dict = sp.track(track_id)
-    return TrackItem.from_dict(track_dict)
+    album_dict = get_album_info(sp=sp, album_id=track_dict["album"]["id"])
+    artist_data = read_artists_from_id(
+        sp=sp, artist_ids=[artist["id"] for artist in album_dict["artists"]]
+    )
+
+    album_dict["artists"] = artist_data
+    track_dict["album"] = album_dict
+
+    return track_dict
 
 
 @login_if_missing(scope=None)
@@ -51,17 +51,7 @@ def get_track_id(sp: ExtendedSpotify, *, track_name: str) -> str:
 @login_if_missing(scope=None)
 def get_audio_features(
     sp: ExtendedSpotify, *, track_ids: List[str]
-) -> Dict[str, AudioFeaturesItem]:
-    """Retrieve audio features for a list of track IDs
-
-    Args:
-        sp (ExtendedSpotify): Spotify object
-        track_ids (List[str]): Track IDs
-
-    Returns:
-        Dict[str, AudioFeaturesItem]: All audio features data
-    """
-
+) -> Dict[str, Dict[str, Any]]:
     max_len = 20
     offset = 0
     all_audio_features = []
@@ -76,6 +66,6 @@ def get_audio_features(
         tracks_to_treat = tracks_to_treat[n:]
 
     return {
-        track_id: AudioFeaturesItem.from_dict(all_audio_features[i_track])
+        track_id: all_audio_features[i_track]
         for i_track, track_id in enumerate(track_ids)
     }

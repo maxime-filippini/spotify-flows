@@ -9,7 +9,9 @@ from spotify_flows.spotify.collections import Show
 from spotify_flows.spotify.playlists import make_new_playlist, edit_playlist_details
 
 # Main body
-def todays_podcasts():
+def todays_podcasts(playlist_name: str = None):
+    if playlist_name is None:
+        playlist_name = "Today's podcasts"
 
     # 1. Load data
     with open("data/podcast.yml") as f:
@@ -28,15 +30,15 @@ def todays_podcasts():
     ).sort(by="duration_ms", ascending=True)
 
     # Add to playlist
-    playlist_id = make_new_playlist(
-        playlist_name="Today's podcasts", items=collection.items
-    )
+    playlist_id = make_new_playlist(playlist_name=playlist_name, items=collection.items)
 
     # Update playlist
     edit_playlist_details(
         playlist_id=playlist_id,
         desc=f"Loaded on {datetime.today().strftime('%Y-%m-%d')}",
     )
+
+    return collection
 
 
 if __name__ == "__main__":

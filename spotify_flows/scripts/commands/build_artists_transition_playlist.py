@@ -1,18 +1,18 @@
 import pickle
 import networkx as nx
-import sqlite3
-import random
-from networkx.algorithms.coloring.greedy_coloring import strategy_random_sequential
 import pandas as pd
 import numpy as np
 import copy
 
 from spotify_flows.spotify.collections import Artist, CollectionCollection
-from spotify_flows.spotify.artists import read_artists_from_id, get_artist_popular_songs
+from spotify_flows.spotify.data_structures import ArtistItem
+from spotify_flows.spotify.artists import read_artists_from_id, get_artist_id
 from spotify_flows.analysis.graphs import artist_popularity_weight_func
 
 
-def main(start_artist_id: str, end_artist_id: str):
+def build_artists_transition_playlist(
+    start_artist_name: str, end_artist_name: str, out_playlist: str = None
+):
 
     # 1. Unpickle the graph
     with open("data/genre_graph.p", "rb") as f:
@@ -21,8 +21,16 @@ def main(start_artist_id: str, end_artist_id: str):
     with open("data/artist_graph.p", "rb") as f:
         artist_graph = pickle.load(f)
 
-    start_artist = read_artists_from_id(artist_ids=[start_artist_id])[0]
-    end_artist = read_artists_from_id(artist_ids=[end_artist_id])[0]
+    # Read artists
+    start_artist_id = get_artist_id(artist_name=start_artist_name)
+    end_artist_id = get_artist_id(artist_name=end_artist_name)
+
+    start_artist = ArtistItem.from_dict(
+        read_artists_from_id(artist_ids=[start_artist_id])[0]
+    )
+    end_artist = ArtistItem.from_dict(
+        read_artists_from_id(artist_ids=[end_artist_id])[0]
+    )
 
     path = nx.dijkstra_path(
         artist_graph,
@@ -40,23 +48,25 @@ def main(start_artist_id: str, end_artist_id: str):
         x.audio_features.danceability - target_audio.danceability
     )
 
-    CollectionCollection(
+    if out_playlist is None:
+        out_playlist = f"{start_artist.name} -> {end_artist.name}"
+
+    p = CollectionCollection(
         id_="collection",
         collections=[start]
         + [
             Artist.from_id(artist_id)
             .popular()
             .add_audio_features()
-            .optimize(target_func)
+            .optimize(target_func, N=1)
             for artist_id in path
         ],
-    ).to_playlist(f"{start_artist.name} -> {end_artist.name}")
+    )
+
+    p.to_playlist(out_playlist)
+
+    return p
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        main(
-            start_artist_id="4ufkY8hmhmYl4aCnzv3dLE",
-            end_artist_id="5POPLEqoZcENY4ZNXQWZHB",
-        )
-    )
+    build_artists_transition_playlist("dua lipa", "senidah")

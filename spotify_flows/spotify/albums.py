@@ -10,10 +10,12 @@ from typing import Any
 # Third party imports
 
 # Local imports
+import spotify_flows.spotify.tracks as tracks
 from .login import login_if_missing
 from .classes import ExtendedSpotify
-from .tracks import read_track_from_id
 from .data_structures import TrackItem
+from .data_structures import AlbumItem
+
 
 # Main body
 @login_if_missing(scope=None)
@@ -47,7 +49,7 @@ def get_album_songs(sp: ExtendedSpotify, *, album_id: str) -> List[TrackItem]:
     track_ids = [track["id"] for track in track_data]
 
     for track_id in track_ids:
-        yield read_track_from_id(sp=sp, track_id=track_id)
+        yield tracks.read_track_from_id(sp=sp, track_id=track_id)
 
 
 @login_if_missing(scope=None)
@@ -61,4 +63,4 @@ def get_album_info(sp: ExtendedSpotify, *, album_id: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Album information
     """
-    return sp.albums([album_id])
+    return sp.albums([album_id]).get("albums")[0]

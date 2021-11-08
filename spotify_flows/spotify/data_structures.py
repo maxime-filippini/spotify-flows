@@ -79,7 +79,8 @@ class AlbumItem(SpotifyDataStructure):
     @classmethod
     def from_dict(cls, track_dict):
         release_date_str = track_dict["release_date"]
-        track_dict["release_date"] = date_parsing(release_date_str)
+        if isinstance(release_date_str, str):
+            track_dict["release_date"] = date_parsing(release_date_str)
         return super().from_dict(track_dict)
 
 

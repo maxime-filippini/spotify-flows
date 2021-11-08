@@ -9,10 +9,10 @@ setup(
     version="0.1.0",
     description="Spotify automation",
     author="M. Filippini",
-    author_email="maxime.filippini@gmaik.com",
+    author_email="maxime.filippini@gmail.com",
     packages=find_packages(),
     python_requires=">=3.7, <4",
     install_requires=["spotipy"],
     extras_require={"dev": ["pytest", "black"]},
-    entry_points={"console_scripts": ["flows=spotify_flows.scripts.commands:main"]},
+    entry_points={"console_scripts": ["flows=spotify_flows.scripts.main:main"]},
 )
