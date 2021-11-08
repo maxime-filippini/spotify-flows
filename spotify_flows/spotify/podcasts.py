@@ -61,7 +61,4 @@ def get_show_episodes(sp: ExtendedSpotify, *, show_id: str) -> List[EpisodeItem]
     Returns:
         List[EpisodeItem]: List of episode objects for the given show
     """
-
-    eps = sp.show_episodes(show_id, limit=50, offset=0).get("items")
-    for ep_dict in eps:
-        yield EpisodeItem.from_dict(ep_dict)
+    yield from sp.show_episodes(show_id, limit=50, offset=0).get("items")

@@ -6,6 +6,7 @@
 import copy
 import random
 import inspect
+import logging
 import itertools
 from typing import Any
 from typing import List
@@ -20,10 +21,15 @@ import pandas as pd
 import networkx as nx
 
 # Local imports
-from spotify_flows.database import SpotifyDatabase
+import spotify_flows.database as database
 
 from .login import login
-from .data_structures import SpotifyDataStructure, TrackItem
+from .data_structures import (
+    EpisodeItem,
+    SpotifyDataStructure,
+    TrackItem,
+    AudioFeaturesItem,
+)
 
 from .tracks import get_track_id, read_track_from_id
 from .tracks import get_audio_features
@@ -45,6 +51,13 @@ from .playlists import get_playlist_tracks
 
 
 # Main body
+logger = logging.getLogger()
+
+
+class DatabaseNotLoaded(Exception):
+    pass
+
+
 @dataclass
 class TrackCollection:
     """Class representing a collection of tracks. Can be chained together through a
@@ -61,13 +74,50 @@ class TrackCollection:
     _items: List[Any] = field(default_factory=list)
     _audio_features_enriched: bool = False
 
+    def copy(self):
+        return copy.copy(self)
+
+    @property
+    def _api_track_gen(self):
+        yield from self._items
+
+    @property
+    def _db_track_gen(self):
+        db = CollectionDatabase()
+        return db.load_playlist(playlist_id=self.id_)
+
+    @property
+    def exist_in_db(self):
+        db = CollectionDatabase()
+        return db.playlist_exists(self.id_) if db.is_loaded() else False
+
     @property
     def items(self):
-        yield from self._items
+        if self._items:
+            yield from self._items
+        else:
+            if self.id_:
+                yield from self.item_gen()
+            else:
+                yield from iter(())
+
+    def item_gen(self):
+        db = CollectionDatabase()
+
+        if self.exist_in_db:
+            yield from self._db_track_gen
+
+        else:
+            logger.info(f"Retrieving items via API")
+            for track_dict in self._api_track_gen:
+                track = TrackItem.from_dict(track_dict)
+                if db.is_loaded():
+                    db.add_track(track_item=track)
+                yield track
 
     @classmethod
     def from_id(cls, id_: str):
-        return cls(id_=id_, info=None)
+        return cls(id_=id_)
 
     @classmethod
     def from_item(cls, id_: str, item: SpotifyDataStructure):
@@ -75,12 +125,13 @@ class TrackCollection:
 
     @classmethod
     def from_db(cls, id_: str, db_path: str):
-        db = SpotifyDatabase(db_path, op_table="table")
+        db = database.SpotifyDatabase(db_path, op_table="table")
         items = cls.read_items_from_db(id_=id_, db=db)
         return TrackCollection(id_=id_, _items=items)
 
     @classmethod
     def from_name(cls, name: str):
+        name = name.replace("_", " ")
         id_ = cls.func_get_id(name=name)
         return cls(id_=id_)
 
@@ -237,11 +288,13 @@ class TrackCollection:
             TrackCollection: Object with new items
         """
 
-        def new_items():
-            yield from random.sample(list(self.items), k=N)
+        def new_items(N):
+            all_items = list(self.items)
+            k = min(N, len(all_items))
+            yield from random.sample(all_items, k=k)
 
         return TrackCollection(
-            _items=new_items(), _audio_features_enriched=self._audio_features_enriched
+            _items=new_items(N), _audio_features_enriched=self._audio_features_enriched
         )
 
     def remove_remixes(self) -> "TrackCollection":
@@ -330,25 +383,54 @@ class TrackCollection:
             _items=new_items(), _audio_features_enriched=self._audio_features_enriched
         )
 
-    def trim_duration(self, minutes: Union[int, Tuple[int, int]]):
-        items = copy.copy(self.items)
-        cum_time = np.cumsum(np.array([item.duration_ms for item in items])) / 1000 / 60
+    def insert_at_time_intervals(self, other, time: int):
+        def new_items(time):
+            dups = itertools.tee(other.items, 20)
+            i_dup = 0
 
-        if isinstance(minutes, int):
-            n_below = len(cum_time[cum_time <= minutes])
-            trim_points = (0, n_below)
-        else:
-            n_below_min = len(cum_time[cum_time <= minutes[0]])
-            n_below_max = len(cum_time[cum_time <= minutes[1]])
-            trim_points = (n_below_min + 1, n_below_max)
+            cum_time = 0
 
-        new_items = items[trim_points[0] : trim_points[1] + 1]
-        return TrackCollection(_items=(i for i in new_items))
+            for item in self.items:
+                prev_cum_time = cum_time
+                cum_time += item.duration_ms / 1000 / 60
+                yield item
+
+                if cum_time % time < prev_cum_time % time:
+                    yield from dups[i_dup]
+                    i_dup += 1
+                    cum_time = 0
+
+        return TrackCollection(_items=new_items(time))
+
+    def insert_at_time(self, other, time: int):
+        def new_items(time):
+            cum_time = 0
+
+            for item in self.items:
+                prev_cum_time = cum_time
+                cum_time += item.duration_ms / 1000 / 60
+                yield item
+
+                if cum_time % time < prev_cum_time % time:
+                    yield from other.items
+
+        return TrackCollection(_items=new_items(time))
+
+    def insert_at_position(self, other, position: int):
+        def new_items(position):
+            before, after = itertools.tee(self.items, 2)
+            yield from itertools.islice(before, position)
+            yield from other.items
+            yield from after
+
+        return TrackCollection(_items=new_items(position))
 
     def add_audio_features(self) -> "TrackCollection":
         def new_items():
             for item in self.items:
-                item.audio_features = get_audio_features(track_ids=[item.id])[item.id]
+                item.audio_features = AudioFeaturesItem.from_dict(
+                    get_audio_features(track_ids=[item.id])[item.id]
+                )
                 yield item
 
         return TrackCollection(_items=new_items(), _audio_features_enriched=True)
@@ -363,7 +445,9 @@ class TrackCollection:
             List[TrackItem]: Enriched items
         """
         for item in items:
-            item.audio_features = get_audio_features(track_ids=[item.id])[item.id]
+            item.audio_features = AudioFeaturesItem.from_dict(
+                get_audio_features(track_ids=[item.id])[item.id]
+            )
             yield item
 
     def set_id(self, id_: str) -> "TrackCollection":
@@ -414,16 +498,25 @@ class TrackCollection:
             _items=new_items, _audio_features_enriched=self._audio_features_enriched
         )
 
-    def to_playlist(self, playlist_name: str) -> None:
+    def to_playlist(self, playlist_name: str = None) -> None:
         if playlist_name is None:
             playlist_name = self.id_
         make_new_playlist(sp=self.sp, playlist_name=playlist_name, items=self.items)
 
-    def to_database(self, db: SpotifyDatabase) -> None:
+    def to_database(self, db: database.SpotifyDatabase = None) -> None:
+        logger.info(f"Storing collection to database. id = {self.id_}")
+        if db is None:
+            db = CollectionDatabase()
+            if not db.is_loaded():
+                raise DatabaseNotLoaded
+
         db.store_tracks_in_database(collection=self)
 
-    def optimize(self, target_func, N: int = 1) -> None:
+    def optimize(self, target_func, N: int = None) -> None:
         items = list(self.items)
+        if N is None:
+            N = len(items)
+
         diffs = np.abs(np.array([target_func(item) for item in items]))
         idx = np.argsort(diffs)
         n = min(N, len(items))
@@ -486,56 +579,18 @@ class TrackCollection:
 
 
 @dataclass
-class TestPlaylist(TrackCollection):
-    @classmethod
-    def func_get_id(cls, name):
-        return get_playlist_id(sp=cls.sp, playlist_name=name)
-
-    @property
-    def items(self):
-
-        if self._items:
-            yield from self._item
-        else:
-            if self.id_:
-                yield from self.item_gen(
-                    SpotifyDatabase("data/spotify.db", op_table="operations")
-                )
-
-            else:
-                yield from iter(())
-
-    def item_gen(self, db):
-        if db.playlist_exists(self.id_):
-            tracks = db.load_playlist(playlist_id=self.id_)
-            yield from tracks
-
-        else:
-            track_gen = get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
-
-            for track in track_gen:
-                db.add_track(track_item=track)
-                yield track
-
-
-@dataclass
 class Playlist(TrackCollection):
-    """Class representing a Playlist's track contents"""
-
     @classmethod
     def func_get_id(cls, name):
         return get_playlist_id(sp=cls.sp, playlist_name=name)
 
     @property
-    def items(self):
-        if self._items:
-            yield from self._items
-        else:
-            if self.id_:
-                yield from get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
+    def _db_track_gen(self):
+        return super()._db_track_gen
 
-            else:
-                yield from iter(())
+    @property
+    def _api_track_gen(self):
+        return get_playlist_tracks(sp=self.sp, playlist_id=self.id_)
 
 
 class Album(TrackCollection):
@@ -546,14 +601,13 @@ class Album(TrackCollection):
         return get_album_id(sp=cls.sp, album_name=name)
 
     @property
-    def items(self):
-        if self._items:
-            yield from self._items
-        else:
-            if self.id_:
-                yield from get_album_songs(sp=self.sp, album_id=self.id_)
-            else:
-                yield from iter(())
+    def _db_track_gen(self):
+        db = CollectionDatabase()
+        return db.load_album(album_id=self.id_)
+
+    @property
+    def _api_track_gen(self):
+        return get_album_songs(sp=self.sp, album_id=self.id_)
 
 
 class Artist(TrackCollection):
@@ -564,14 +618,13 @@ class Artist(TrackCollection):
         return get_artist_id(sp=cls.sp, artist_name=name)
 
     @property
-    def items(self):
-        if self._items:
-            yield from self._items
-        else:
-            if self.id_:
-                yield from self.all_songs()
-            else:
-                yield from iter(())
+    def _db_track_gen(self):
+        db = CollectionDatabase()
+        return db.load_artist(artist_id=self.id_)
+
+    @property
+    def _api_track_gen(self):
+        return self.all_songs()
 
     def popular(self) -> "Artist":
         """Popular songs for the artist
@@ -581,7 +634,8 @@ class Artist(TrackCollection):
         """
 
         def items():
-            yield from get_artist_popular_songs(sp=self.sp, artist_id=self.id_)
+            for track_dict in get_artist_popular_songs(sp=self.sp, artist_id=self.id_):
+                yield TrackItem.from_dict(track_dict)
 
         return Artist(id_=self.id_, _items=items())
 
@@ -594,7 +648,7 @@ class Artist(TrackCollection):
 
         # Build album collections
         album_data = get_artist_albums(artist_id=self.id_)
-        album_collection_items = [Album.from_id(album.id) for album in album_data]
+        album_collection_items = [Album.from_id(album["id"]) for album in album_data]
         album_collection = CollectionCollection(collections=album_collection_items)
 
         # Retrieve items from album collection
@@ -618,27 +672,35 @@ class Artist(TrackCollection):
             n += 1
 
         related_artists = [
-            Artist(id_=artist_item.id) for artist_item in related_artist_items[:n]
+            Artist(id_=artist_item["id"]) for artist_item in related_artist_items[:n]
         ]
 
         return ArtistCollection(collections=related_artists)
+
+
+class SavedTracks(TrackCollection):
+    """Class representing an saved track contents"""
+
+    def __init__(self):
+        self._items = []
+        self.id_ = "Saved tracks"
+
+    @property
+    def _db_track_gen(self):
+        return super()._db_track_gen
+
+    @property
+    def _api_track_gen(self):
+        return get_all_saved_tracks(sp=self.sp)
 
 
 @dataclass
 class CollectionCollection(TrackCollection):
     collections: List[TrackCollection] = field(default_factory=list)
 
-    @property
-    def items(self) -> List[TrackItem]:
-        if self._items:
-            items_to_load = self._items
-        else:
-            if self.collections:
-                items_to_load = sum(self.collections).items
-            else:
-                items_to_load = iter(())
-
-        yield from items_to_load
+    def item_gen(self):
+        if self.collections:
+            yield from sum(self.collections).items
 
     def alternate(self):
         def new_items():
@@ -682,20 +744,6 @@ class Genre(TrackCollection):
                 yield from iter(())
 
 
-class SavedTracks(TrackCollection):
-    """Class representing an saved track contents"""
-
-    def __init__(self) -> None:
-        self._items = []
-
-    @property
-    def items(self) -> List[TrackItem]:
-        if self._items:
-            return self._items
-        else:
-            yield from get_all_saved_tracks(sp=self.sp)
-
-
 class Show(TrackCollection):
     """Class representing an show's episode contents"""
 
@@ -704,29 +752,39 @@ class Show(TrackCollection):
         return get_show_id(sp=cls.sp, query=name)
 
     @property
-    def items(self) -> List[TrackItem]:
-        if self._items:
-            yield from self._items
-        else:
-            if self.id_:
-                yield from get_show_episodes(sp=self.sp, show_id=self.id_)
-            else:
-                yield from iter(())
+    def _db_track_gen(self):
+        return self._api_track_gen  # TBD
+
+    @property
+    def _api_track_gen(self):
+        for ep_dict in get_show_episodes(sp=self.sp, show_id=self.id_):
+            yield EpisodeItem.from_dict(ep_dict)
+
+    def item_gen(self):
+        yield from self._api_track_gen
 
 
 class Track(TrackCollection):
     """Class representing a single-track collection"""
 
+    def __init__(self, id_: str):
+        self.id_ = id_
+        self._items = iter([TrackItem.from_dict(read_track_from_id(track_id=id_))])
+
     @classmethod
     def func_get_id(cls, name):
         return get_track_id(sp=cls.sp, track_name=name)
 
-    @property
-    def items(self) -> List[TrackItem]:
-        if self._items:
-            yield from self._items
-        else:
-            if self.id_:
-                yield read_track_from_id(track_id=self.id_)
-            else:
-                yield None
+
+class CollectionDatabase(
+    database.SpotifyDatabase, metaclass=database.DatabaseSingleton
+):
+    def __init__(self, file_path=None, op_table=None):
+        super().__init__(file_path=file_path, op_table=op_table)
+
+    def is_loaded(self):
+        return self.file_path is not None
+
+
+def init_db(db_path):
+    CollectionDatabase(file_path=db_path, op_table="operations")

@@ -1,3 +1,3 @@
-from .database import Database, SpotifyDatabase
+from .database import Database, SpotifyDatabase, DatabaseSingleton
 
-__all__ = ["Database", "SpotifyDatabase"]
+__all__ = ["Database", "SpotifyDatabase", "DatabaseSingleton"]

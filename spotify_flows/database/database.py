@@ -5,6 +5,7 @@
 # Standard library imports
 import yaml
 import random
+import logging
 import sqlite3
 import functools
 from tqdm import tqdm
@@ -26,6 +27,9 @@ from spotify_flows.spotify.data_structures import (
 )
 
 # Main body
+logger = logging.getLogger()
+
+
 def connect_me(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -143,8 +147,16 @@ class SpotifyDatabase(Database):
             df_albums_artists,
             df_artists,
             df_audio_features,
+            df_genres,
         ) = self.table_contents(
-            ["tracks", "albums", "albums_artists", "artists", "audio_features"]
+            [
+                "tracks",
+                "albums",
+                "albums_artists",
+                "artists",
+                "audio_features",
+                "genres",
+            ]
         )
 
         # Format the data
@@ -165,6 +177,17 @@ class SpotifyDatabase(Database):
             artist_dict = df_artists.loc[df_artists["id"].isin(artist_ids)].to_dict(
                 "records"
             )
+
+            # Add genres to artist
+            artist_dict = [
+                {
+                    **a_d,
+                    "genres": df_genres.loc[
+                        df_genres["artist_id"] == a_d["id"], "genre"
+                    ].tolist(),
+                }
+                for a_d in artist_dict
+            ]
 
             # Add artist data to album
             album_dict["artists"] = artist_dict
@@ -214,6 +237,7 @@ class SpotifyDatabase(Database):
         }
 
         for table, df_data in table_map.items():
+            logger.info(f"Enriching {table} with {len(df_data)} rows")
             self.enrich_database_table(df_data=df_data, table=table)
 
         df_collection = df_all_tracks.loc[:, ["id"]].rename(columns={"id": "track_id"})
@@ -272,11 +296,33 @@ class SpotifyDatabase(Database):
             f"SELECT DISTINCT track_id FROM collections WHERE id = '{playlist_id}'"
         )
         track_ids = df_collections["track_id"].tolist()
+        return self.build_collection_from_track_ids(track_ids=track_ids)
 
-        df_tracks = self.table_contents("tracks")
-        track_dict = df_tracks.set_index("id").to_dict("index")
+    @connect_me
+    def load_album(self, album_id: str):
+        df = self.select(
+            f"SELECT DISTINCT id FROM tracks WHERE album_id = '{album_id}'"
+        )
 
-        return [TrackItem.from_dict(track_dict[track_id]) for track_id in track_ids]
+        track_ids = df["id"].tolist()
+        return self.build_collection_from_track_ids(track_ids=track_ids)
+
+    @connect_me
+    def load_artist(self, artist_id: str):
+        df_tracks, df_album_artists = self.table_contents(["tracks", "albums_artists"])
+
+        track_ids = (
+            df_album_artists.loc[df_album_artists["artist_id"] == artist_id]
+            .merge(df_tracks, how="inner", on="album_id")
+            .loc[:, "id"]
+            .tolist()
+        )
+
+        return self.build_collection_from_track_ids(track_ids=track_ids)
+
+    @connect_me
+    def load_track(self, track_id: str):
+        return self.build_collection_from_track_ids(track_ids=[track_id])
 
     @connect_me
     def add_collection(self, collection_id: str, tracks: List[TrackItem]):
@@ -305,7 +351,7 @@ class SpotifyDatabase(Database):
     @connect_me
     def add_album(self, album_item: AlbumItem):
         album_dict = asdict(album_item)
-        self.enrich_database_table(df_data=pd.DataFrame(album_dict), table="albums")
+        self.enrich_database_table(df_data=pd.DataFrame([album_dict]), table="albums")
 
         artist_ids = [artist.id for artist in album_item.artists]
         self.add_album_artists(album_id=album_item.id, artist_ids=artist_ids)
@@ -322,7 +368,7 @@ class SpotifyDatabase(Database):
     def add_track(self, track_item: TrackItem):
         track_dict = asdict(track_item)
         track_dict["album_id"] = track_item.album.id
-        self.enrich_database_table(df_data=pd.DataFrame(track_dict), table="tracks")
+        self.enrich_database_table(df_data=pd.DataFrame([track_dict]), table="tracks")
         self.add_album(album_item=track_item.album)
 
     @connect_me
@@ -330,3 +376,14 @@ class SpotifyDatabase(Database):
         audio_features_dict = asdict(audio_features)
         df = pd.DataFrame(data=[{"artist_id": artist_id, **audio_features_dict}])
         self.enrich_database_table(df_data=df, table="audio_features")
+
+
+class DatabaseSingleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(DatabaseSingleton, cls).__call__(
+                *args, **kwargs
+            )
+        return cls._instances[cls]
